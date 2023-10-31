@@ -2,17 +2,18 @@
 # Date: 08/24/2022
 
 #Toggle between importing for HPC or for local machine. 1 of these must be commented out!
-#from Model_Functions_v2 import *
-from Model_Functions_v2_for_HPC import *
-
-from HYPSTAT_data_inputs_231010 import *
+from Model_Functions_v2 import *
+#from Model_Functions_v2_for_HPC import *
 
 import os
 from pyomo.environ import *
 
-print('### Running model for year {y} ###'.format(y=year))
+print('### Running model ###')
 print()
 for iteration in (0,1):
+
+    from HYPSTAT_data_inputs_231010 import *
+
     ## Get data:
     if iteration==0:
         #first iteration
@@ -37,18 +38,15 @@ for iteration in (0,1):
                 links.loc[link,'Capacity (kg/hr)'] = 0
         print(links)
 
+    if h != 1: #TODO: think about time resolution, for now leave as minimum 1 hour
+        all_renewable_profiles = all_renewable_profiles.resample('{}h'.format(h)).sum()
+        demand = demand.resample('{}h'.format(h)).sum()
     
     #TODO: some form of inputs that describe what is allowed for mapping of RE generation types to H2 production types
 
     ###################################################
     # Model build #
     ###################################################
-
-    all_renewable_profiles=all_renewable_profiles.loc['1 Jan '+str(year): '31 Dec '+str(year)]
-
-    year_ratio=len((all_renewable_profiles).resample('d').first())/365 # used to estimate total costs for year. Just used for testing. 
-
-    max_imports *= year_ratio
 
     #Create model
     m = ConcreteModel()
@@ -396,7 +394,6 @@ for iteration in (0,1):
     print('Setting up objective function...')
     #### Objective function
     ## FIXME: enable unserved H2
-    build_cost=build_cost*year_ratio
 
     def get_CRF(interest=0.10, years=30):
         return (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
@@ -428,8 +425,8 @@ for iteration in (0,1):
 
     stream_solver=True
     print('Solving')
-    opt = SolverFactory("gurobi", solver_io="python")
-    #opt = SolverFactory('glpk')
+    #opt = SolverFactory("gurobi", solver_io="python")
+    opt = SolverFactory('glpk')
     results_final = opt.solve(m, tee=stream_solver) #,options={'NonConvex':2}
 
     if iteration==0:
@@ -441,8 +438,7 @@ for iteration in (0,1):
 
 
 # Plot Model Results
-#results_dir = 'Temporal/Results/Test runs/v5_w_stor_ITC/{y}'.format(y=year)
-results_dir = '/projects/h2nyserda/NYSERDA_Scenario_Tool/Temporal/Final_Results/Case_1_020323/{y}'.format(y=year)
+results_dir = 'test_case_outputs'
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 
