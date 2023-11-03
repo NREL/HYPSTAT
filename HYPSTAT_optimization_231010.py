@@ -438,7 +438,7 @@ for iteration in (0,1):
 
 
 # Plot Model Results
-results_dir = 'test_case_outputs'
+results_dir = 'test_case_v2_outputs'
 if not os.path.exists(results_dir):
     os.makedirs(results_dir)
 

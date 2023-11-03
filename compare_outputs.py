@@ -2,8 +2,8 @@ import pandas as pd
 from glob import glob
 import os
 
-test_dir = 'test_case_outputs/' #should have the slash on the end
-comp_dir = 'test_case_correct_results/' #should have the slash on the end
+test_dir = 'test_case_v2_outputs/' #should have the slash on the end
+comp_dir = 'test_case_v2_correct_results/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]

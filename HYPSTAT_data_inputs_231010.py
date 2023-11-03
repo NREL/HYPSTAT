@@ -97,8 +97,8 @@ Nuclear_LCOE=Nuclear_LCOE/1000 #$/kWh
 nuclear_h2_conversion_efficiency = 35.7
 
 #import controls
-max_imports = demand.sum().sum()/2
-import_zones = {'CS'} #zones which can import hydrogen
+max_imports = demand.sum().sum()/4
+import_zones = {'F'} #zones which can import hydrogen
 
 overserved_cost = 5 #$/kg
 
