@@ -1,0 +1,7 @@
+Year,Tech,CAPEX($/kW),OPEX($/kW-yr),efficiency(kWh/kg)
+2030,PEM Electrolyser,926,64.83,51
+2040,PEM Electrolyser,736,53.563,51
+2050,PEM Electrolyser,575,44.02,51
+2030,Solid Oxide Electrolyser,357,51.24,35.7
+2040,Solid Oxide Electrolyser,357,51.24,35.7
+2050,Solid Oxide Electrolyser,357,51.24,35.7

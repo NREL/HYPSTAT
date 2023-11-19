@@ -1,0 +1,40 @@
+#Model condition 
+firstYear         : 2030  # Units: yr
+lastYear          : 2050  # Units: yr
+timeWindow        : 10  # Units: yr
+senario           : 'Best_Guess'  # Scenario for the run
+
+#Import
+allow_import  : False
+import_amount : 0.25 # 25% of the total hydrogen system demand
+import_zones  : {'F'} #zones which can import hydrogen
+
+#Model constrain:
+ruck_size_limit  : 4166 #kg/hr, 100 trucks/day * 1000kg/truck /24 hr/day
+hydrogen_overserved_cost  : 5 #$/kg
+
+#Time controls (use for intrayear analysis)
+start : '1 Jan ' #start date for intrayear analysis 
+end : '31 Dec' # end date for intrayear analysis
+
+#FilePath:
+demandFile:
+  - "Inputs/demand/h2_demand.tsv"
+
+REcostFile:
+  - "Inputs/financials/renewable-build-costs.csv"
+
+ProductioncostFile:
+  - "Inputs/financials/Renewable-production-costs.csv"
+
+SupplycurveFolder:
+  - "Inputs/supply_curves/Temporal_Supply_Files_with_Clustering_final_221118"
+
+NetworksFiles:
+  - "Inputs/networks/2030_Best_Guess_links.csv"
+  - "Inputs/networks/2040_Best_Guess_links.csv"
+  - "Inputs/networks/2050_Best_Guess_links.csv"
+
+LinkdistanceFile:
+  - "Inputs/networks/link_distances.csv"
+

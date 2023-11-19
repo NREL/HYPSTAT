@@ -26,7 +26,6 @@ link_flow_direction, links, all_zones,links_to_zones=get_links(None,scenario=sce
 #add column in links for operating cost
 
 #right now, set all to $0.06/kg
-
 comp_cost = 0.06 #$/kg/100-mi of transmission
 truck_cost = 1.25 #$/kg/100-mi of truck transmission
 truck_size_limit = 100*1000/24 #kg/hr

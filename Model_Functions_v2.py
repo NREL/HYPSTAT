@@ -36,7 +36,6 @@ def get_renewable_profiles(drop_capacity_below=False,year=2030,techs = ['Terrest
         zones_from_files=[]
         # create data from for each tech
         for f in tech_files:
-            
             zone=(f.split('_Zone')[1].split('_')[0])
             profile=pd.read_csv(f,index_col=0)
             if len(profile)>0:
