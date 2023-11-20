@@ -90,7 +90,7 @@ class HYPSTAT:
         #Total_cavern_capacity = 16000000
 
         #import controls
-        self.max_imports = self.demand.sum().sum()/4
+        self.max_imports = 0 #self.demand.sum().sum()/4
         self.import_zones = {'F'} #zones which can import hydrogen
 
         self.overserved_cost = 5 #$/kg
@@ -188,6 +188,7 @@ class HYPSTAT:
         self.m.H2_Storage_Capacity = Var(self.m.Zones, domain=NonNegativeReals)  #(kg)
         self.m.Cavern_Storage_Capacity = Var(self.m.Zones, domain=NonNegativeReals) #(kg) #TODO: consolodate into single variable with additional index for storage tech
         self.m.Link_Flow = Var(self.m.T, self.m.Links)  # (kg/per interval i.e. kg/h) #TODO: create a variable for pipeline flow (maybe remove Link_Flow)
+        self.m.Pipeline_Flow = Var(self.m.T, self.m.Links) #(kg/per interval, i.e., kg/h) Pipeline flow
         self.m.Truck_Flow = Var(self.m.T,self.m.Links)
         self.m.Renewable_Production  = Var(self.m.Techs, self.m.T, self.m.Zones)  #kWh 
         self.m.Renewable_Capacity = Var(self.m.Techs,self.m.Zones,self.m.Renewable_producers, domain=NonNegativeReals)  #kw
@@ -364,6 +365,12 @@ class HYPSTAT:
                     return m.Pipeline_Capacity[link] <= self.links.loc[link,'Capacity (kg/hr)']*self.h
                 
                 self.m.pipeline_size_constraint = Constraint(self.m.Links, rule=pipeline_size_rule)
+
+            # Total link flow
+            def total_link_flow_rule(m, t, link):
+                return m.Link_Flow[t, link] == m.Pipeline_Flow[t, link] + m.Truck_Flow[t, link]
+
+            self.m.total_link_flow_constraint = Constraint(self.m.T, self.m.Links, rule=total_link_flow_rule)
             
             # TODO: generalize into tank-based transmission
             # TODO: think about if we want to incorporate capex/fixed opex or keep as levelized cost (via opex)
@@ -377,17 +384,15 @@ class HYPSTAT:
             
             self.m.reverse_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=reverse_max_truck_rule)
 
-            def link_forward_flow_rule(m, t, link): #TODO: recast specifically with pipelines
-                #return m.Link_Flow[t, link] <= links.loc[link,'Capacity (kg/hr)'] * h
-                return m.Link_Flow[t, link] - m.Truck_Flow[t,link] <= m.Pipeline_Capacity[link]
+            def pipeline_forward_flow_rule(m, t, link): #TODO: recast specifically with pipelines
+                return m.Pipeline_Flow[t, link] <= m.Pipeline_Capacity[link]
                 
-            self.m.link_forward_flow_constraint = Constraint(self.m.T, self.m.Links, rule=link_forward_flow_rule)
+            self.m.pipeline_forward_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_forward_flow_rule)
 
-            def link_reverse_flow_rule(m, t, link):
-                #return m.Link_Flow[t, link] >= -1*links.loc[link ,'Capacity (kg/hr)'] * h
-                return m.Link_Flow[t, link] - m.Truck_Flow[t,link] >= -1*m.Pipeline_Capacity[link]
+            def pipeline_reverse_flow_rule(m, t, link):
+                return m.Pipeline_Flow[t, link] >= -1*m.Pipeline_Capacity[link]
 
-            self.m.link_reverse_flow_constraint = Constraint(self.m.T, self.m.Links, rule=link_reverse_flow_rule)
+            self.m.pipeline_reverse_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_reverse_flow_rule)
 
             print('Setting up renewable zone constraints...')
             # Renewable production - this defines the renewable production at each node  in kwh
@@ -446,12 +451,12 @@ class HYPSTAT:
             print('Setting up transmission cost constraints...')
             #TODO: work out in inputs somewhere how to add multipliers for links or set link costs in some specific way (or disallow links)
             def Forward_Pipeline_Cost_rule(m, t, link):
-                return (m.Pipeline_Cost[t,link] >= (m.Link_Flow[t,link] - m.Truck_Flow[t,link])*self.links.loc[link,'Transmission Opex ($/kg)'])
+                return (m.Pipeline_Cost[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
 
             self.m.Forward_Pipeline_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Pipeline_Cost_rule)
 
             def Reverse_Pipeline_Cost_rule(m, t, link):
-                return (m.Pipeline_Cost[t,link] >= -(m.Link_Flow[t,link] - m.Truck_Flow[t,link])*self.links.loc[link,'Transmission Opex ($/kg)'])
+                return (m.Pipeline_Cost[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
 
             self.m.Reverse_Pipeline_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_Cost_rule)
 
@@ -571,12 +576,24 @@ class HYPSTAT:
 
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
+        else:
+            con = input("results_dir '{}' already exists. Do you want to overwrite? (y/n)")
+            while True:
+                if con=='n':
+                    return
+                    break
+                elif con != 'y':
+                    break
+                else:
+                    con = input('Invalid input. Please respond (y/n)')
+
 
         #collect useful parameters and write to csv for future reference
         params = dict()
         params['year_ratio'] = self.year_ratio
         params['max_imports'] = self.max_imports
         params['h'] = self.h
+        params['obj'] = self.m.objective()
 
         pd.Series(params).to_csv(results_dir+'/params.csv')
         self.build_cost.to_csv(results_dir+'/build_cost.csv')
@@ -602,6 +619,10 @@ class HYPSTAT:
         Link_Flow = pd.Series(self.m.Link_Flow.extract_values(), index=self.m.Link_Flow.extract_values().keys()).unstack()
         Link_Flow.index=list(self.t_dict.values())
         Link_Flow.to_csv(results_dir+'/Link_Flow.csv')
+
+        Pipeline_Flow = pd.Series(self.m.Pipeline_Flow.extract_values(), index=self.m.Pipeline_Flow.extract_values().keys()).unstack()
+        Pipeline_Flow.index=list(self.t_dict.values())
+        Pipeline_Flow.to_csv(results_dir+'/Pipeline_Flow.csv')
 
         H2_Storage_Level = pd.Series(self.m.H2_Storage_Level.extract_values(), index=self.m.H2_Storage_Level.extract_values().keys()).unstack()
         H2_Storage_Level.index=list(self.t_dict.values())
@@ -696,5 +717,11 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('obj_test_case')
+test.write_outputs('test_case_pipelines_no_imports')
 print('Done!')
+
+'''
+GUIDE TO TEST CASES:
+
+-test_case_pipelines: version of the model with specific variable created for pipelines...should have extra output for pipeline flow, but other than that outputs should match
+'''
