@@ -90,7 +90,7 @@ class HYPSTAT:
         #Total_cavern_capacity = 16000000
 
         #import controls
-        self.max_imports = 0 #self.demand.sum().sum()/4
+        self.max_imports = self.demand.sum().sum()/4
         self.import_zones = {'F'} #zones which can import hydrogen
 
         self.overserved_cost = 5 #$/kg
@@ -723,5 +723,12 @@ print('Done!')
 '''
 GUIDE TO TEST CASES:
 
--test_case_pipelines: version of the model with specific variable created for pipelines...should have extra output for pipeline flow, but other than that outputs should match
+For comparison: obj_test_case, test_case_correct_results, test_case_outputs (should all match)
+                test_case_no_imports is a version with no imports (vs. 1/4 imports in test case)
+
+                obj_test_case and test_case_no_imports have the objective function value so better for comparison
+
+Test cases:
+        test_case_pipelines: version of the model with specific variable created for pipelines...should have extra output for pipeline flow, but other than that outputs should match
+        test_case_pipelines-no_imports: version of the no_imports test case with pipelines
 '''

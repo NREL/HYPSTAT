@@ -3,8 +3,8 @@ import numpy as np
 from glob import glob
 import os
 
-test_dir = 'test_case_pipelines_no_imports/' #should have the slash on the end
-comp_dir = 'test_case_no_imports/' #should have the slash on the end
+test_dir = 'test_case_pipe/' #should have the slash on the end
+comp_dir = 'obj/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
@@ -71,6 +71,14 @@ for tf in test_files:
         print('\tData do not match!')
         dif_flagged = True
         dif_found = True
+
+    
+    #check sums for Zone_Capacities
+    if f=='Zone_Capacities.csv' and dif_flagged:
+        tsum = tdata.sum(axis=1)
+        csum = cdata.sum(axis=1)
+        if np.allclose(tsum.values,csum.values):
+            print('\tBut technology sums match')
     
     if dif_flagged:
         print()
