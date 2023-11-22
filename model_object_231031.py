@@ -180,7 +180,7 @@ class HYPSTAT:
         #Time varying variables
 
         #TODO: will need to add variable for specific flows of electricity to specific production types
-        self.m.Zone_H2_Demand_Storage = Var(self.m.T, self.m.Zones)#, domain=NonNegativeReals)  #kg/per interval i.e. kg/h #TODO: (?) eliminate this variable and consolodate into mass balance
+        #self.m.Zone_H2_Demand_Storage = Var(self.m.T, self.m.Zones)#, domain=NonNegativeReals)  #kg/per interval i.e. kg/h #TODO: (?) eliminate this variable and consolodate into mass balance
         self.m.H2_Storage_Discharge_Charge = Var(self.m.T, self.m.Zones) # can be positive or negative  (kg/per interval i.e. kg/h)
         self.m.Cavern_Storage_Discharge_Charge = Var(self.m.T, self.m.Zones) # can be positive or negative  (kg/per interval i.e. kg/h) #TODO: consolodate into single variable with additional index for storage tech
         self.m.H2_Storage_Level = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #(kg) 
@@ -242,7 +242,7 @@ class HYPSTAT:
             def storage_demand_rule_2(m, t, zone):
                     return ( m.Zone_H2_Demand_Storage[t,zone] == m.Demand_Met[t,zone] + m.H2_Storage_Discharge_Charge[t,zone] + m.Cavern_Storage_Discharge_Charge[t,zone] - m.H2_Imports[t,zone])
 
-            self.m.storage_demand_constraint = Constraint(self.m.T, self.m.Zones, rule=storage_demand_rule_2)
+            #self.m.storage_demand_constraint = Constraint(self.m.T, self.m.Zones, rule=storage_demand_rule_2)
 
             # Meet demand over course of day
 
@@ -444,7 +444,8 @@ class HYPSTAT:
             # H2 balance considering link flows
             def H2_Balance_rule(m, t, zone):
                 links_to_this_zone=self.links_to_zones[zone]
-                return (m.Hydrogen_Production[t, zone]  + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) == m.Zone_H2_Demand_Storage[t, zone] + m.H2_Overserved[t, zone] )
+                return (m.Hydrogen_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
+                        m.H2_Storage_Discharge_Charge[t, zone] + m.Cavern_Storage_Discharge_Charge[t, zone] + m.Demand_Met[t, zone] + m.H2_Overserved[t, zone] )
 
             self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Balance_rule)
 
@@ -717,7 +718,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('test_case_pipelines_no_imports')
+test.write_outputs('test_case_cons_mb')
 print('Done!')
 
 '''
@@ -730,5 +731,6 @@ For comparison: obj_test_case, test_case_correct_results, test_case_outputs (sho
 
 Test cases:
         test_case_pipelines: version of the model with specific variable created for pipelines...should have extra output for pipeline flow, but other than that outputs should match
-        test_case_pipelines-no_imports: version of the no_imports test case with pipelines
+        test_case_pipelines_no_imports: version of the no_imports test case with pipelines
+        test_case_cons_mb: consolidated mass balance (should match the test case with imports)
 '''

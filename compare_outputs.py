@@ -3,8 +3,8 @@ import numpy as np
 from glob import glob
 import os
 
-test_dir = 'test_case_pipe/' #should have the slash on the end
-comp_dir = 'obj/' #should have the slash on the end
+test_dir = 'test_case_cons_mb/' #should have the slash on the end
+comp_dir = 'test_case_pipelines/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
