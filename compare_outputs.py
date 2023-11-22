@@ -3,8 +3,8 @@ import numpy as np
 from glob import glob
 import os
 
-test_dir = 'test_case_cons_mb/' #should have the slash on the end
-comp_dir = 'test_case_pipelines/' #should have the slash on the end
+test_dir = 'test_case_gen_stor/' #should have the slash on the end
+comp_dir = 'test_case_cons_mb_FIXED/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
@@ -16,7 +16,7 @@ for cf in comp_files:
     f = cf.split('\\')[-1]
     tf = test_dir+f
     try:
-        if f=='Renewable_Capacity.csv' or tf.split('_')[-1]=='raw.csv':
+        if f=='Renewable_Capacity.csv' or tf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
             idx = [0,1]
         else:
             idx = 0
@@ -31,7 +31,7 @@ for tf in test_files:
     dif_flagged = False
     f = tf.split('\\')[-1]
     cf = comp_dir+f
-    if f=='Renewable_Capacity.csv' or tf.split('_')[-1]=='raw.csv':
+    if f=='Renewable_Capacity.csv' or tf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
             idx = [0,1]
     else:
         idx = 0
