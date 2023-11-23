@@ -4,7 +4,7 @@ from glob import glob
 import os
 
 test_dir = 'test_case_gen_stor/' #should have the slash on the end
-comp_dir = 'test_case_cons_mb_FIXED/' #should have the slash on the end
+comp_dir = 'test_case_gen_stor2/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
@@ -37,7 +37,7 @@ for tf in test_files:
         idx = 0
     tdata = pd.read_csv(tf,index_col=idx).astype(np.float64)
     try:
-        if f=='Renewable_Capacity.csv' or cf.split('_')[-1]=='raw.csv':
+        if f=='Renewable_Capacity.csv' or cf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
             idx = [0,1]
         else:
             idx = 0

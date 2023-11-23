@@ -134,19 +134,7 @@ class HYPSTAT:
 
         if self.h != 1: #TODO: think about time resolution, for now leave as minimum 1 hour
             self.all_renewable_profiles = self.all_renewable_profiles.resample('{}h'.format(self.h)).sum()
-            self.demand = self.demand.resample('{}h'.format(self.h)).sum()
-
-        # OLD NUCLEAR CONTROLS - TO BE REMOVED #
-        """ ## nuclear hydrogen inputs:
-        include_nuclear_hydrogen=False
-        nuclear_hydrogen_years=[2050]
-        nuclear_zones=['CN']
-        #capacity_factor=0.890507
-        maximum_nuclear_capacity=1255.8 * 1000 #KW
-        Nuclear_LCOE=30 #$/MWh
-        Nuclear_LCOE=Nuclear_LCOE/1000 #$/kWh
-        nuclear_h2_conversion_efficiency = 35.7 """
-        
+            self.demand = self.demand.resample('{}h'.format(self.h)).sum()        
 
     def load_model(self,optimize_pipelines=False):
         self.m = ConcreteModel()
@@ -196,14 +184,8 @@ class HYPSTAT:
         #Time varying variables
 
         #TODO: will need to add variable for specific flows of electricity to specific production types
-        #self.m.H2_Storage_Discharge_Charge = Var(self.m.T, self.m.Zones) # can be positive or negative  (kg/per interval i.e. kg/h)
-        #self.m.Cavern_Storage_Discharge_Charge = Var(self.m.T, self.m.Zones) # can be positive or negative  (kg/per interval i.e. kg/h) #TODO: consolodate into single variable with additional index for storage tech
         self.m.Storage_Discharge_Charge = Var(self.m.Stor_Techs,self.m.T,self.m.Zones)
-        #self.m.H2_Storage_Level = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #(kg) 
-        #self.m.Cavern_Storage_Level = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #(kg) #TODO: consolodate into single variable with additional index for storage tech
         self.m.Storage_Level = Var(self.m.Stor_Techs,self.m.T,self.m.Zones,domain=NonNegativeReals)
-        #self.m.H2_Storage_Capacity = Var(self.m.Zones, domain=NonNegativeReals)  #(kg)
-        #self.m.Cavern_Storage_Capacity = Var(self.m.Zones, domain=NonNegativeReals) #(kg) #TODO: consolodate into single variable with additional index for storage tech
         self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Zones,domain=NonNegativeReals)
         
         self.m.Link_Flow = Var(self.m.T, self.m.Links)  # (kg/per interval i.e. kg/h)
@@ -222,29 +204,11 @@ class HYPSTAT:
         self.m.Pipeline_Cost = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #$/kg #TODO: rename all of these to specify OPEX
         self.m.Truck_Cost = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #$/kg #TODO: rename all of these to specify OPEX, TODO: generalize to all tank-based transmission
         
-        #self.m.H2_Storage_Cost = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #$/kg for charging storage #TODO: rename all of these to specify OPEX
-        #self.m.Cavern_Storage_Cost = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #$/kg for charging storage #TODO: rename all of these to specify OPEX, TODO: consolodate storage into single variable with storage tech index set
         self.m.Storage_Cost = Var(self.m.Stor_Techs,self.m.T,self.m.Zones, domain=NonNegativeReals)
 
         self.m.Pipeline_Capacity = Var(self.m.Links, domain = NonNegativeReals) # kg/period pipeline capacity for each zone
         if optimize_pipelines:
             self.m.Pipeline_Exists = Var(self.m.Links,domain=Binary) #whether or not a pipeline exists
-
-        # OLD NUCLEAR CONTROLS - TO BE REMOVED #
-        '''
-        self.m.Nuclear_Zones = Set(initialize=list(nuclear_zones), ordered=True)  delete nuclear zones (set up as an input as part of different tech types)
-        self.m.nuclear_h2_conversion_efficiency = Param(initialize=nuclear_h2_conversion_efficiency) # kW/kg.h2
-        self.m.Nuclear_LCOE = Param(initialize=Nuclear_LCOE) #$/Kwh
-
-        if include_nuclear_hydrogen  & (year in nuclear_hydrogen_years): remove nuclear technology
-            nuclear_profiles = all_renewable_profiles['Nuclear']
-
-        #hourly capacity factor 
-        self.m.Nuclear_Production  = Var(self.m.T, self.m.Nuclear_Zones)  #kWh 
-        #m.Nuclear_Capacity = Var(m.Techs,m.Nuclear_Zones, domain=NonNegativeReals,bounds=(0, maximum_nuclear_capacity)) # Bound to the maximum nuclear capacity
-        self.m.Nuclear_H2_Electrolyser_Capacity = Var(self.m.Nuclear_Zones, domain=NonNegativeReals, bounds=(0, maximum_nuclear_capacity)) # Bound to the maximum nuclear capacity
-        self.m.Nuclear_H2_Production= Var(self.m.T, self.m.Nuclear_Zones, domain=NonNegativeReals) #kg
-        '''
 
     def load_constraints(self,optimize_pipelines=False):
         # pipeline flow incidence matrix
@@ -270,7 +234,6 @@ class HYPSTAT:
             self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=demand_rule_2)
 
             # Limit imports
-
             def total_imports_rule(m):
                 return sum(sum(m.H2_Imports[t,zone] for t in m.T) for zone in m.Zones) <= self.max_imports
             
@@ -285,45 +248,17 @@ class HYPSTAT:
             
             self.m.zone_imports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_imports_rule)
 
-            # Storage Charge Discharge, multi-period; TODO: figure out why mass balance wasn't quite closing and fix
+            # Storage Charge Discharge, multi-period;
             # TODO: clarify point within the hour that we mean for storage, transmission, etc.
-            # TODO: consolodate into single storage rule with multiple storage techs
-            def H2_storage_multi_period_rule(m, t, zone):
-                if t == m.T.first():
-                    return m.H2_Storage_Level[t, zone]==m.H2_Storage_Level[m.T.last(), zone] + m.Cavern_Storage_Discharge_Charge[t,zone]
-                else:
-                    return (m.H2_Storage_Level[t, zone] == m.H2_Storage_Level[t - 1,zone]  + m.H2_Storage_Discharge_Charge[t, zone])
-
-            #self.m.H2_storage_multi_period_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_storage_multi_period_rule)
-
-            def Cavern_storage_multi_period_rule(m, t, zone):
-                if t == m.T.first():
-                    return m.Cavern_Storage_Level[t, zone]==m.Cavern_Storage_Level[m.T.last(), zone] + m.Cavern_Storage_Discharge_Charge[t,zone]
-                else:
-                    return (m.Cavern_Storage_Level[t, zone] == m.Cavern_Storage_Level[t - 1,zone]  + m.Cavern_Storage_Discharge_Charge[t, zone])
-                
             def Storage_mutli_period_rule(m, stor_tech, t, zone):
                 if t == m.T.first():
                     return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Discharge_Charge[stor_tech,t,zone]
                 else:
                     return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Discharge_Charge[stor_tech, t, zone])
 
-            #self.m.Cavern_storage_multi_period_constraint = Constraint(self.m.T, self.m.Zones, rule=Cavern_storage_multi_period_rule)
             self.m.Storage_multip_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
 
-
             # Cavern charge discharge speed
-            # TODO: consolidate into single storage
-            def Cavern_charge_rule(m, t, zone):
-                return (m.Cavern_Storage_Discharge_Charge[t, zone] <= m.Cavern_charge_limit*m.Cavern_Storage_Capacity[zone])
-
-            #self.m.Cavern_charge_constraint = Constraint(self.m.T, self.m.Zones, rule=Cavern_charge_rule)
-
-            def Cavern_discharge_rule(m, t, zone):
-                return (m.Cavern_Storage_Discharge_Charge[t, zone] >= -m.Cavern_discharge_limit*m.Cavern_Storage_Capacity[zone])
-
-            #self.m.Cavern_discharge_constraint = Constraint(self.m.T, self.m.Zones, rule=Cavern_discharge_rule)
-
             def Storage_charge_rule(m, stor_tech, t, zone):
                 if m.Storage_charge_limit[stor_tech]=='inf':
                     return Constraint.Skip
@@ -341,17 +276,7 @@ class HYPSTAT:
             self.m.Storage_discharge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_discharge_rule)
 
             # Storage Level
-            # TODO: consolidate into single storage
             # TODO: note in documentation that storage capacities need to be working capacities
-            def H2_storage_level_rule(m, t, zone):
-                return (m.H2_Storage_Level[t, zone] <= m.H2_Storage_Capacity[zone])
-
-            #self.m.H2_storage_level_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_storage_level_rule)
-
-            def Cavern_storage_level_rule(m, t, zone):
-                return (m.Cavern_Storage_Level[t, zone] <= m.Cavern_Storage_Capacity[zone])
-
-            #self.m.Cavern_storage_level_constraint = Constraint(self.m.T, self.m.Zones, rule=Cavern_storage_level_rule)
 
             def Storage_level_rule(m, stor_tech, t, zone):
                 return (m.Storage_Level[stor_tech, t, zone] <= m.Storage_Capacity[stor_tech, zone])
@@ -360,23 +285,6 @@ class HYPSTAT:
 
             #TODO: consolidate all of this into some sort of input table with limits for each storage type and zone
             #TODO: consider if we want to still have a total storage constraint
-            def Tank_capacity_rule(m,zone):
-                cap = self.tank_capacities[zone]
-                if cap=='inf': #TODO: see if there is an np.infinity that this could be replaced with?
-                    return Constraint.Skip
-                else:
-                    return (m.H2_Storage_Capacity[zone] <= cap)
-
-            #self.m.Tank_capacity_constraint = Constraint(self.m.Zones, rule=Tank_capacity_rule)
-
-            def Cavern_capacity_rule(m, zone):
-                cap = self.cavern_capacities[zone]
-                if cap=='inf':
-                    return Constraint.Skip
-                else:
-                    return (m.Cavern_Storage_Capacity[zone] <= cap)
-
-            #self.m.Cavern_capacity_constraint = Constraint(self.m.Zones, rule=Cavern_capacity_rule)
 
             def Storage_capacity_cap_rule(m, stor_tech, zone):
                 cap = self.storage_capacities[stor_tech][zone]
@@ -387,13 +295,6 @@ class HYPSTAT:
 
             self.m.Storage_capacity_cap_constraint = Constraint(self.m.Stor_Techs, self.m.Zones, rule=Storage_capacity_cap_rule)
 
-            
-
-            def Total_cavern_capacity_rule(m):
-                return (sum(m.Cavern_Storage_Capacity[zone] for zone in m.Zones) <= m.Total_cavern_capacity)
-
-            #if self.Total_cavern_capacity != 'inf':
-            #    self.m.Total_cavern_capacity_constraint = Constraint(rule=Total_cavern_capacity_rule)
 
             def Total_storage_capacity_rule(m, stor_tech):
                 if m.Total_storage_capacity[stor_tech]=='inf':
@@ -530,17 +431,7 @@ class HYPSTAT:
             self.m.Reverse_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Truck_Cost_rule)
 
             print('Setting up storage cost constraints...')
-            # TODO: generalize into generic storage types
             # TODO: allow for variable opex on discharge if desired by user
-            def H2_Storage_Cost_rule(m, t, zone):
-                return (m.H2_Storage_Cost[t,zone] >= m.H2_Storage_Discharge_Charge[t,zone]*m.Tank_charge_cost)
-
-            #self.m.H2_Storage_Cost_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Storage_Cost_rule)
-
-            def Cavern_Storage_Cost_rule(m, t, zone):
-                return (m.Cavern_Storage_Cost[t,zone] >= m.Cavern_Storage_Discharge_Charge[t,zone]*m.Cavern_charge_cost)
-
-            #self.m.Cavern_Storage_Cost_constraint = Constraint(self.m.T, self.m.Zones, rule=Cavern_Storage_Cost_rule)
 
             def Storage_Cost_rule(m, stor_tech, t, zone):
                 return (m.Storage_Cost[stor_tech,t,zone] >= m.Storage_Discharge_Charge[stor_tech,t,zone]*m.Storage_charge_cost[stor_tech])
@@ -557,12 +448,9 @@ class HYPSTAT:
             def objective_rule(m):
                 return (sum(
                         sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}_Storage'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #cost of storage build
-                        #m.H2_Storage_Capacity[zone] * self.build_cost.loc['Tank_Storage',zone] +  #cost of tank build
-                        #m.Cavern_Storage_Capacity[zone] * self.build_cost.loc['Cavern_Storage',zone] +  #cost of cavern build                                                                                                                           
                         m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM_Electrolyser',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
                         sum(m.H2_Unserved[t, zone] * m.Cost_of_Unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
                         sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
-                        
                         sum(sum(m.Pipeline_Cost[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
                         sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
                         #TODO: consider variable opex for generation techs (e.g., to use LCOE)
@@ -570,11 +458,7 @@ class HYPSTAT:
                         #TODO: consider CAPEX for tank-based based
                         #TODO: convert pipeline costs into inputs
                         sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
-                        #sum(sum(m.H2_Storage_Cost[t,zone] for t in m.T) for zone in m.Zones) + #opex for storage (input only)
-                        #sum(sum(m.Cavern_Storage_Cost[t,zone] for t in m.T) for zone in m.Zones) + #opex for storage (input only)
-
                         sum(sum(sum(m.Storage_Cost[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
-
                         sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
                         #TODO: handle PTC/ITC in inputs
                         -sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
@@ -583,27 +467,6 @@ class HYPSTAT:
                         
                 #log_infeasible_constraints(m)
             self.m.objective = Objective(rule=objective_rule, sense=minimize)
-
-
-            # OLD NUCLEAR CONTROLS - TO BE REMOVED #
-            '''
-             ## nuclear H2 production 
-            if (include_nuclear_hydrogen) & (year in nuclear_hydrogen_years):
-                print('Including nuclear H2')
-            
-                def Nuclear_H2_Production_rule(m, t, zone):
-                    return m.Nuclear_H2_Production[t, zone] == m.Nuclear_H2_Electrolyser_Capacity[zone]*float(nuclear_profiles.loc[t_dict[t]])/m.nuclear_h2_conversion_efficiency
-                m.Nuclear_H2_Production_constraint = Constraint(m.T, m.Nuclear_Zones, rule=Nuclear_H2_Production_rule)
-            
-                
-            # FROM H2 PRODUCTION RULE
-                if (include_nuclear_hydrogen) & (year in nuclear_hydrogen_years) & (zone in nuclear_zones):
-                    return m.Hydrogen_Production[t, zone] == (sum(m.Renewable_Production[tech,t, zone]  - m.Curtailed_Renewable_Production[tech,t, zone] for tech in m.Techs))/m.h2_conversion_efficiency + m.Nuclear_H2_Production[t, zone]
-                else:
-            
-            # FROM OJBECTIVE FUNCTION
-                        sum(sum(m.Nuclear_H2_Production[t, zone] * m.nuclear_h2_conversion_efficiency * m.Nuclear_LCOE for t in m.T if (include_nuclear_hydrogen) & (self.year in nuclear_hydrogen_years)) + m.Nuclear_H2_Electrolyser_Capacity[zone] * self.build_cost.loc['Solid_Oxide_Electrolyser',zone] for zone in m.Nuclear_Zones if (include_nuclear_hydrogen) & (year in nuclear_hydrogen_years))) # nuclear H2 production - only included if include_nuclear_hydrogen==True
-            '''
 
     def solve_model(self,optimize_pipelines=False):
         stream_solver=True
@@ -672,22 +535,14 @@ class HYPSTAT:
         ITC_data = pd.DataFrame.from_dict(self.ITC,orient='index')
         ITC_data.to_csv(results_dir+'/ITC.csv')
 
-        #build dataframe of useful capacities
-        #H2_Storage_Capacity = pd.Series(self.m.Storage_Capacity['Tank'].extract_values(), index=self.m.Storage_Capacity['Tank'].extract_values().keys())
-        #Cavern_Storage_Capacity = pd.Series(self.m.Storage_Capacity['Cavern'].extract_values(), index=self.m.Storage_Capacity['Cavern'].extract_values().keys())
+      
         
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
-
         Renewable_Capacity = pd.Series(self.m.Renewable_Capacity.extract_values(), index=self.m.Renewable_Capacity.extract_values().keys()).unstack()
         Zone_Capacities=Renewable_Capacity.sum(1).unstack()
         Electrolyser_Capacity = pd.Series(self.m.Electrolyser_Capacity.extract_values(), index=self.m.Electrolyser_Capacity.extract_values().keys())
         Zone_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity
-        #Zone_Capacities.loc['Tank_Storage']=H2_Storage_Capacity
-        #Zone_Capacities.loc['Cavern_Storage']=Cavern_Storage_Capacity
-
         Zone_Capacities = pd.concat([Zone_Capacities,Storage_Capacity],axis=0)
-
-        print(Zone_Capacities)
 
         H2_Overserved = pd.Series(self.m.H2_Overserved.extract_values(), index=self.m.H2_Overserved.extract_values().keys()).unstack()
         H2_Overserved.index=list(self.t_dict.values())
@@ -705,10 +560,6 @@ class HYPSTAT:
         Storage_Level.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Level.index],names=Storage_Level.index.names)
         Storage_Level.to_csv(results_dir+'/Storage_Level.csv')
 
-        '''Cavern_Storage_Level = pd.Series(self.m.Storage_Level['Cavern'].extract_values(), index=self.m.Storage_Level['Cavern'].extract_values().keys()).unstack()
-        Cavern_Storage_Level.index=list(self.t_dict.values())
-        Cavern_Storage_Level.to_csv(results_dir+'/Cavern_Storage_Level.csv')'''
-
         Renewable_Production = pd.Series(self.m.Renewable_Production.extract_values(), index=self.m.Renewable_Production.extract_values().keys()).unstack()
         Renewable_Production = pd.DataFrame(Renewable_Production)
         Renewable_Production_raw = copy.copy(Renewable_Production)
@@ -724,18 +575,9 @@ class HYPSTAT:
         Renewable_Capacity = pd.Series(self.m.Renewable_Capacity.extract_values(), index=self.m.Renewable_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity.to_csv(results_dir+'/Renewable_Capacity.csv')
 
-
         Storage_Discharge_Charge = pd.Series(self.m.Storage_Discharge_Charge.extract_values(), index=self.m.Storage_Discharge_Charge.extract_values().keys()).unstack()
         Storage_Discharge_Charge.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Discharge_Charge.index],names=Storage_Discharge_Charge.index.names)
         Storage_Discharge_Charge.to_csv(results_dir+'/Storage_Discharge_Charge.csv')
-
-        '''H2_Storage_Discharge_Charge = pd.Series(self.m.Storage_Discharge_Charge['Tank'].extract_values(), index=self.m.Storage_Discharge_Charge['Tank'].extract_values().keys()).unstack()
-        H2_Storage_Discharge_Charge.index=list(self.t_dict.values())
-        H2_Storage_Discharge_Charge.to_csv(results_dir+'/H2_Storage_Discharge_Charge.csv')
-
-        Cavern_Storage_Discharge_Charge = pd.Series(self.m.Storage_Discharge_Charge['Cavern'].extract_values(), index=self.m.Storage_Discharge_Charge['Cavern'].extract_values().keys()).unstack()
-        Cavern_Storage_Discharge_Charge.index=list(self.t_dict.values())
-        Cavern_Storage_Discharge_Charge.to_csv(results_dir+'/Cavern_Storage_Discharge_Charge.csv')'''
 
         H2_Unserved = pd.Series(self.m.H2_Unserved.extract_values(), index=self.m.H2_Unserved.extract_values().keys()).unstack()
         H2_Unserved.index=list(self.t_dict.values())
@@ -781,24 +623,9 @@ class HYPSTAT:
         self.Pipeline_Exists.to_csv(results_dir+'/Pipeline_Exists.csv')
 
 
-        # OLD NUCLEAR INFO - TO BE DELETED #
-        '''
-        params['nuclear_h2_conversion_efficiency'] = m.nuclear_h2_conversion_efficiency.value
-        params['Nuclear_LCOE'] = m.Nuclear_LCOE.value
-
-        if include_nuclear_hydrogen  & (year in nuclear_hydrogen_years):
-            Nuclear_H2_Production = pd.Series(m.Nuclear_H2_Production.extract_values(), index=m.Nuclear_H2_Production.extract_values().keys()).unstack()
-            Nuclear_Electricity_consumption=Nuclear_H2_Production*m.nuclear_h2_conversion_efficiency.value
-            Nuclear_H2_Electrolyser_Capacity = pd.Series(m.Nuclear_H2_Electrolyser_Capacity.extract_values(), index=m.Nuclear_H2_Electrolyser_Capacity.extract_values().keys())
-            Zone_Capacities.loc['Solid_Oxide_Electrolyser']=Nuclear_H2_Electrolyser_Capacity
-            nuclear_production_lcoh=(Nuclear_Electricity_consumption*m.Nuclear_LCOE.value).sum()/Nuclear_H2_Production.sum()
-            Nuclear_H2_Production.to_csv(results_dir+'/Nuclear_H2_Production.csv')
-        '''
-
-
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('test_case_gen_stor_cavern_error')
+test.write_outputs('test_case_gen_stor2')
 print('Done!')
 
 '''
@@ -821,4 +648,5 @@ Test cases:
             Note: orders/names have changed but zone builds in this are the same as test_case_cons_mb_FIXED.
             CAN BE USED AS POINT OF COMPARISON NOW
         test_case_gen_stor_cavern_error: same as gen_stor, but with an artificial error using cavern storage discharge charge in the first hour storage constraint to mimic old test cases
-'''
+        test_case_gen_stor2: same as test_case_gen_stor with some extraneous/commented code removed for cleaning. Results should be identical.
+        '''
