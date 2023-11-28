@@ -3,8 +3,25 @@ import numpy as np
 from glob import glob
 import os
 
-test_dir = 'test_case_gen_stor/' #should have the slash on the end
-comp_dir = 'test_case_gen_stor2/' #should have the slash on the end
+def common_sums_match(df1, df2, count_no_shared_indices=False):
+    #checks if the sums of rows with shared indices between two dataframes match
+    #also returns False if df1 and df2 have no shared indices, unless count_no_shared_indices is set to True
+
+    shared_indices = False
+    for i in df1.index:
+        if i in df2.index:
+            shared_indices = True
+            if not np.isclose(df1.loc[i].sum(),df2.loc[i].sum()):
+                return False
+    
+    if shared_indices or count_no_shared_indices:
+        return True
+    else:
+        return False
+            
+
+test_dir = 'Test Cases/test_case_gen_stor/' #should have the slash on the end
+comp_dir = 'Test Cases/test_case_re_opex/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
@@ -77,7 +94,7 @@ for tf in test_files:
     if f=='Zone_Capacities.csv' and dif_flagged:
         tsum = tdata.sum(axis=1)
         csum = cdata.sum(axis=1)
-        if np.allclose(tsum.values,csum.values):
+        if common_sums_match(tsum,csum):
             print('\tBut technology sums match')
     
     if dif_flagged:

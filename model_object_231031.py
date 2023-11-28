@@ -20,11 +20,11 @@ class HYPSTAT:
         pass
 
     def load_inputs(self,optimize_pipelines=False,Pipeline_Exists=None):
-        techs = ['Terrestrial_Wind','Offshore_Wind','Solar'] 
+        #techs = ['Terrestrial_Wind','Offshore_Wind','Solar'] 
 
         self.year = 2050 #dummy line
 
-        self.techs = ['Terrestrial_Wind','Offshore_Wind','Solar']  #TODO: convert to inputs (booleans for different tech types or flexible?)
+        self.techs = ['Terrestrial_Wind','Offshore_Wind','Solar','Grid']  #TODO: convert to inputs (booleans for different tech types or flexible?)
         self.stor_techs = ['Cavern','Tank']
 
         supply_path = '../Test case data/Supply profiles'
@@ -59,17 +59,25 @@ class HYPSTAT:
         self.h2_conversion_efficiency=51
         self.build_cost=get_build_cost_matrix(year=self.year,file='Build_Cost_Inputs_elec_cost_conservative.csv',all_zones=self.all_zones,includ_interconnection_cost = True)
 
-        self.PTC = dict()
-        for tech in techs:
-            if tech == 'Offshore_Wind':
+        """ self.PTC = dict()
+        for tech in self.techs:
+            if tech == 'Offshore_Wind' or tech=='Grid':
                 self.PTC[tech] = 0 #0.04
             else:
-                self.PTC[tech] = 0.024
+                self.PTC[tech] = 0.024 """
+
+        self.PTC = {
+            'Terrestrial_Wind': 0.024,
+            'Offshore_Wind': 0,
+            'Solar': 0.024,
+            'Grid':0
+        }
 
         self.ITC = {
             'Terrestrial_Wind': 0,
             'Offshore_Wind': 0.04,
-            'Solar': 0
+            'Solar': 0,
+            'Grid':0
         }
 
         #TODO: eventually probably want to make this a dataframe instead of nested dictionary
@@ -101,6 +109,10 @@ class HYPSTAT:
         self.import_zones = {'F'} #zones which can import hydrogen
 
         self.overserved_cost = 5 #$/kg
+
+        #RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
+        self.re_opex = pd.DataFrame(data=0,index=self.techs,columns=self.all_zones)
+        self.re_opex.loc['Grid'] = 0.2 #$/kWh (LCOE)
 
         #Time controls
         self.all_renewable_profiles=self.all_renewable_profiles.loc['1 Jan '+str(self.year): '7 Jan '+str(self.year)]
@@ -155,7 +167,6 @@ class HYPSTAT:
         '''
         TODO: SETS THAT ARE MISSING
         -H2 production techs
-        -storage techs
         -tank-based transmission techs
 
         -Pipelines? Maybe extra tranches
@@ -362,14 +373,11 @@ class HYPSTAT:
 
             # Renewable build limit  - sets the capacity of each REZ to be less than a value 
             def Renewable_build_limit_rule(m, tech, zone, producer):
-                # 
-                capacity = get_producers(self.capacities,zone=zone, tech = tech)
-                
+                capacity = get_producers(self.capacities,zone=zone,tech=tech)
                 if producer in capacity.index:
                     if not capacity.loc[producer]==capacity.loc[producer]:
 
                         capacity.loc[producer] = 0
-                    #print(capacity.loc[producer])
                     return  (m.Renewable_Capacity[tech,zone,producer] <= capacity.loc[producer] * 1000) #TODO: specify units in inputs to avoid this 1000
                 else:
                     return Constraint.Skip
@@ -460,6 +468,10 @@ class HYPSTAT:
                         sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
                         sum(sum(sum(m.Storage_Cost[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
                         sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
+
+                        #electricity opex
+                        sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
+
                         #TODO: handle PTC/ITC in inputs
                         -sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
                         -sum(sum(sum((m.Renewable_Production[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) #ITC effects
@@ -625,7 +637,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('test_case_gen_stor2')
+test.write_outputs('Test Cases/test_case_grid')
 print('Done!')
 
 '''
@@ -649,4 +661,6 @@ Test cases:
             CAN BE USED AS POINT OF COMPARISON NOW
         test_case_gen_stor_cavern_error: same as gen_stor, but with an artificial error using cavern storage discharge charge in the first hour storage constraint to mimic old test cases
         test_case_gen_stor2: same as test_case_gen_stor with some extraneous/commented code removed for cleaning. Results should be identical.
+        test_case_re_opex: testing the adding of opex to RE, i.e., for grid electricity. This test has grid electricity at $1000/kWh, so no grid electricity should be used and results should be identical to previous case.
+        test_case_grid: testing using RE opex to have a reasonable grid price ($0.2/kWh) (for competetion between grid and RE). SHOULD NOT HAVE COMPARABLE RESULTS TO BEFORE, but obj value should be less than before
         '''
