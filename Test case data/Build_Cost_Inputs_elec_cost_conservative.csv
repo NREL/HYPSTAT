@@ -1,0 +1,19 @@
+Year,Tech,CAPEX($/kW),OPEX($/kW-yr),InterconnectionCost($/kW)
+2030,Terrestrial Wind,950,38.95,141
+2040,Terrestrial Wind,855,36.02875,141
+2050,Terrestrial Wind,760,33.1075,141
+2030,Offshore Wind,3775.703166,65.25499844,141
+2040,Offshore Wind,3437.149633,58.44419334,141
+2050,Offshore Wind,3233.238199,54.13464343,141
+2030,Solar,751.5513599,15.22157173,88
+2040,Solar,684.5816992,14.22571798,88
+2050,Solar,617.6120385,13.25232813,88
+2030,Grid,0,0,0
+2040,Grid,0,0,0
+2050,Grid,0,0,0
+2030,PEM Electrolyser,926,64.83,0
+2040,PEM Electrolyser,736,53.563,0
+2050,PEM Electrolyser,575,44.02,0
+2030,Solid Oxide Electrolyser,357,51.24,0
+2040,Solid Oxide Electrolyser,357,51.24,0
+2050,Solid Oxide Electrolyser,357,51.24,0

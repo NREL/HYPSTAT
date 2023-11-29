@@ -267,12 +267,13 @@ class HYPSTAT:
                 else:
                     return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Discharge_Charge[stor_tech, t, zone])
 
-            self.m.Storage_multip_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
+            self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
 
-            # Cavern charge discharge speed
+            # charge discharge speed
             def Storage_charge_rule(m, stor_tech, t, zone):
                 if m.Storage_charge_limit[stor_tech]=='inf':
                     return Constraint.Skip
+                    #Could also use just a really large number but probably leave as skip constraint
                 else:
                     return (m.Storage_Discharge_Charge[stor_tech, t, zone] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
             
@@ -471,6 +472,7 @@ class HYPSTAT:
 
                         #electricity opex
                         sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
+                        # could loop through just grid connected zones or something like that
 
                         #TODO: handle PTC/ITC in inputs
                         -sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
