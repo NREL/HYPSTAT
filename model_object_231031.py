@@ -202,13 +202,14 @@ class HYPSTAT:
         self.m.Link_Flow = Var(self.m.T, self.m.Links)  # (kg/per interval i.e. kg/h)
         self.m.Pipeline_Flow = Var(self.m.T, self.m.Links) #(kg/per interval, i.e., kg/h) Pipeline flow
         self.m.Truck_Flow = Var(self.m.T,self.m.Links)
-        self.m.Renewable_Production  = Var(self.m.Techs, self.m.T, self.m.Zones)  #kWh 
+        self.m.Electricity_Potential  = Var(self.m.Techs, self.m.T, self.m.Zones)  #kWh 
+        self.m.Electricity_Used = Var(self.m.Techs, self.m.T, self.m.Zones) #kWh
         self.m.Renewable_Capacity = Var(self.m.Techs,self.m.Zones,self.m.Renewable_producers, domain=NonNegativeReals)  #kw
         self.m.Hydrogen_Production = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)   #kg/per interval #TODO: split into different types of production
         self.m.H2_Unserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )   #kg/per interval
         self.m.H2_Overserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )  
         self.m.Electrolyser_Capacity = Var(self.m.Zones, domain=NonNegativeReals) #TODO: split into different types of production (maybe rename)
-        self.m.Curtailed_Renewable_Production = Var(self.m.Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) 
+        self.m.Electricity_Curtailed = Var(self.m.Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) 
         self.m.H2_Imports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) # imported hydrogen, kg/interval
 
         self.m.Demand_Met = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)# kg per interval #TODO: rename H2_demand_met or similar
@@ -368,9 +369,9 @@ class HYPSTAT:
             print('Setting up renewable zone constraints...')
             # Renewable production - this defines the renewable production at each node  in kwh
             def Renewable_Production_rule(m, tech, t, zone):
-                return m.Renewable_Production[tech, t, zone] == sum(self.all_renewable_profiles.loc[self.t_dict[t],(tech,zone,producer)] * m.Renewable_Capacity[tech,zone,producer]  for producer in get_producers(self.capacities,zone=zone,tech = tech).index )
+                return m.Electricity_Potential[tech, t, zone] == sum(self.all_renewable_profiles.loc[self.t_dict[t],(tech,zone,producer)] * m.Renewable_Capacity[tech,zone,producer]  for producer in get_producers(self.capacities,zone=zone,tech = tech).index )
 
-            self.m.Renewable_Production_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Renewable_Production_rule)
+            self.m.Electricity_Potential_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Renewable_Production_rule)
 
             # Renewable build limit  - sets the capacity of each REZ to be less than a value 
             def Renewable_build_limit_rule(m, tech, zone, producer):
@@ -387,14 +388,19 @@ class HYPSTAT:
 
             # TODO: recast curtailment and electrolyzer capacity based on generalized electricity/production flows
             def Curtailed_electricity_limit_rule(m, tech, t, zone):
-                return m.Curtailed_Renewable_Production[tech, t, zone] <= m.Renewable_Production[tech, t, zone]
+                return m.Electricity_Curtailed[tech, t, zone] <= m.Electricity_Potential[tech, t, zone]
             
             self.m.Curtailed_electricity_limit_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Curtailed_electricity_limit_rule) #can't curtailed more electricity than is produced
+
+            def Electricity_Used_rule(m, tech, t, zone):
+                return (m.Electricity_Used[tech, t, zone] == m.Electricity_Potential[tech, t, zone] - m.Electricity_Curtailed[tech, t, zone])
+
+            self.m.Electricity_Used_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Electricity_Used_rule)
 
             # cap renewable production at node to electrolyser capacity
             #TODO: rename this for clarity (could recast for easier understanding but probably not necessary)
             def electrolyser_capacity_limit_rule(m, t, zone):
-                return (sum(m.Renewable_Production[tech, t, zone] - m.Curtailed_Renewable_Production[tech, t, zone] for tech in m.Techs)) <= m.Electrolyser_Capacity[zone]*self.h
+                return (sum(m.Electricity_Used[tech, t, zone] for tech in m.Techs)) <= m.Electrolyser_Capacity[zone]*self.h
 
             self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Zones, rule=electrolyser_capacity_limit_rule)
 
@@ -404,7 +410,7 @@ class HYPSTAT:
                 # TODO: will need to think about how renewable production matches up with H2 production
                 # TODO: create variables for specification of electricity flows from each RE tech to each H2 production tech
             def H2_Production_rule(m, t, zone):
-                return m.Hydrogen_Production[t, zone] == (sum(m.Renewable_Production[tech,t, zone]  - m.Curtailed_Renewable_Production[tech,t, zone] for tech in m.Techs))/m.h2_conversion_efficiency
+                return m.Hydrogen_Production[t, zone] == (sum(m.Electricity_Used[tech, t, zone] for tech in m.Techs))/m.h2_conversion_efficiency
 
             self.m.H2_Production_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Production_rule)
 
@@ -471,12 +477,12 @@ class HYPSTAT:
                         sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
 
                         #electricity opex
-                        sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
+                        sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
                         # could loop through just grid connected zones or something like that
 
                         #TODO: handle PTC/ITC in inputs
-                        -sum(sum(sum((m.Renewable_Production[tech,t,zone] - m.Curtailed_Renewable_Production[tech,t,zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
-                        -sum(sum(sum((m.Renewable_Production[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) #ITC effects
+                        -sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
+                        -sum(sum(sum((m.Electricity_Potential[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) #ITC effects
                 )
                         
                 #log_infeasible_constraints(m)
@@ -525,8 +531,11 @@ class HYPSTAT:
             con = input("results_dir '{}' already exists. Do you want to overwrite? (y/n)")
             while True:
                 if con=='n':
-                    return
-                    break
+                    con2 = input("Press enter to abort (no results writing) or enter a new directory name to write results to")
+                    if con2 == '':
+                        return
+                    else:
+                        return self.write_outputs(con2)
                 elif con == 'y':
                     break
                 else:
@@ -574,7 +583,7 @@ class HYPSTAT:
         Storage_Level.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Level.index],names=Storage_Level.index.names)
         Storage_Level.to_csv(results_dir+'/Storage_Level.csv')
 
-        Renewable_Production = pd.Series(self.m.Renewable_Production.extract_values(), index=self.m.Renewable_Production.extract_values().keys()).unstack()
+        Renewable_Production = pd.Series(self.m.Electricity_Potential.extract_values(), index=self.m.Electricity_Potential.extract_values().keys()).unstack()
         Renewable_Production = pd.DataFrame(Renewable_Production)
         Renewable_Production_raw = copy.copy(Renewable_Production)
         Renewable_Production_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Renewable_Production_raw.index],names=Renewable_Production_raw.index.names)
@@ -604,7 +613,7 @@ class HYPSTAT:
         Hydrogen_Production.index=list(self.t_dict.values())
         Hydrogen_Production.to_csv(results_dir+'/H2_Production.csv')
 
-        Curtailed_Renewable_Production = pd.Series(self.m.Curtailed_Renewable_Production.extract_values(), index=self.m.Curtailed_Renewable_Production.extract_values().keys()).unstack()
+        Curtailed_Renewable_Production = pd.Series(self.m.Electricity_Curtailed.extract_values(), index=self.m.Electricity_Curtailed.extract_values().keys()).unstack()
         Curtailed_Renewable_Production = pd.DataFrame(Curtailed_Renewable_Production)
         Curtailed_Renewable_Production_raw = copy.copy(Curtailed_Renewable_Production)
         Curtailed_Renewable_Production_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Curtailed_Renewable_Production_raw.index],names=Curtailed_Renewable_Production_raw.index.names)
@@ -639,7 +648,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('Test Cases/test_case_grid')
+test.write_outputs('Test Cases/test_case_recast_elec_prod2')
 print('Done!')
 
 '''
@@ -665,4 +674,8 @@ Test cases:
         test_case_gen_stor2: same as test_case_gen_stor with some extraneous/commented code removed for cleaning. Results should be identical.
         test_case_re_opex: testing the adding of opex to RE, i.e., for grid electricity. This test has grid electricity at $1000/kWh, so no grid electricity should be used and results should be identical to previous case.
         test_case_grid: testing using RE opex to have a reasonable grid price ($0.2/kWh) (for competetion between grid and RE). SHOULD NOT HAVE COMPARABLE RESULTS TO BEFORE, but obj value should be less than before
+        test_case_grid2: same as above but with cheaper electricity so that it is used ($0.03/kWh)
+        test_case_grid3: same as above, with mid-price electricity ($0.05/kWh)
+        test_case_recast_elec_prod: same as test_case_grid3, but with electricity recast to include a specific variable for amount of used electricity (more intuitive)
+        test_case_recast_elec_prod2: same as test_case_grid but with electricity recast as above (but should build no grid electricity)
         '''
