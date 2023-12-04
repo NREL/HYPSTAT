@@ -6,123 +6,124 @@ This file contains the model object for the HYPSTAT model
 
 import time
 import os
-import pandas as pd
 import numpy as np
+import pandas as pd
+import yaml
+from pathlib import Path  # Import Path to handle file paths
 
 
 from pyomo.environ import *
 
 from Model_Functions_v3 import *
+from Model_Functions_v2_111423 import *
 
 
 class HYPSTAT:
-    def __init__(self):
-        pass
+        
+    def __init__(self, yaml_file_path='HYPSTAT_scenario.yaml'):
+        self.yaml_file_path = yaml_file_path
+        self.load_inputs()
 
     def load_inputs(self,optimize_pipelines=False,Pipeline_Exists=None):
-        #techs = ['Terrestrial_Wind','Offshore_Wind','Solar'] 
+        yaml_path = Path(self.yaml_file_path)
+        with yaml_path.open('r') as yaml_file:
+            yaml_data = yaml.safe_load(yaml_file)
+        
+        self.year = yaml_data.get('studiedyear',None)
+        self.firstYear = yaml_data.get('firstYear', None)
+        self.lastYear = yaml_data.get('lastYear', None)
+        self.timeWindow = yaml_data.get('timeWindow', None)
+        self.scenario = yaml_data.get('scenario', None)
+        self.truck_size_limit = yaml_data.get('truck_size_limit', None)
 
-        self.year = 2050 #dummy line
+        self.interest = yaml_data.get('interest', None)
+        self.payback_years = yaml_data.get('payback_years', None)
+        self.payback_years_tank = yaml_data.get('payback_years_tank', None)
+        self.payback_years_electrolyzer = yaml_data.get('payback_years_electrolyzer', None)
 
-        self.techs = ['Terrestrial_Wind','Offshore_Wind','Solar','Grid']  #TODO: convert to inputs (booleans for different tech types or flexible?)
-        self.stor_techs = ['Cavern','Tank']
+        self.max_imports_ratio = yaml_data.get('max_imports_ratio', None)
+        self.import_zones = yaml_data.get('import_zones', None)
+        print(self.import_zones)
+        self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None)
 
-        supply_path = '../Test case data/Supply profiles'
-        self.all_renewable_profiles,self.capacities=get_renewable_profiles(year=self.year,techs=self.techs, drop_capacity_below=False,path=supply_path)
+        self.start = yaml_data.get('start', None)
+        self.end = yaml_data.get('end', None)
 
-        demand_path = '../Test case data/Demand profiles/Mid_Demand_demand.tsv' #TODO: convert to csv, not tsv
-        self.demand=get_demand(self.all_renewable_profiles,year=self.year, daily_demand=True, path=demand_path)
+        self.demandFiles_paths = yaml_data.get('demandFile', [])
+        self.REcostFiles_paths = yaml_data.get('REcostFile', [])
+        self.ProductioncostFiles_paths = yaml_data.get('ProductioncostFile', [])
+        self.H2DeliveryFile_paths = yaml_data.get('H2DeliveryFile', [])
+        self.H2StorageFile_paths = yaml_data.get('H2StorageFile', [])
+        self.SupplycurveFolder_paths = yaml_data.get('SupplycurveFolder', [])
+        self.Networks_paths = yaml_data.get('NetworksFiles', [])
+        self.IncentiveFiles_paths = yaml_data.get('IncentiveFiles', [])
+        self.StorageCapacityFiles_paths = yaml_data.get('StorageCapacityFiles', [])
+        self.StorageLimitsFiles_paths = yaml_data.get('StorageLimitsFiles', [])
 
-        links_path = '../Test case data/unlimited_links.csv'
-        self.link_flow_direction, self.links, self.all_zones,self.links_to_zones=get_links(links_path)
+        self.REcostFiles = pd.concat([pd.read_csv(path) for path in self.REcostFiles_paths], ignore_index=True)
+        self.year_tech_dict = self.create_year_tech_dict(self.REcostFiles)
+        self.techs = self.year_tech_dict[self.year]
 
-        #add column in links for operating cost
+        self.H2StorageFile = pd.concat([pd.read_csv(path) for path in self.H2StorageFile_paths], ignore_index=True)
+        self.year_stor_tech_dict = self.create_year_tech_dict(self.H2StorageFile)
+        self.stor_techs = self.year_stor_tech_dict[self.year]
 
-        #right now, set all to $0.06/kg
+        self.all_renewable_profiles, self.capacities = get_renewable_profiles(year=self.year,techs = self.techs,path=self.SupplycurveFolder_paths[0],drop_capacity_below=False)
+        self.demand = get_demand(self.all_renewable_profiles,year=self.year, daily_demand=True,freq='h', file_path=self.demandFiles_paths[0])
+        self.link_flow_direction, self.links, self.all_zones, self.links_to_zones = get_links(self.Networks_paths[0])
 
-        comp_cost = 0.06 #$/kg/100-mi of transmission
-        self.truck_cost = 1.25 #$/kg/100-mi of truck transmission
-        self.truck_size_limit = 100*1000/24 #kg/hr
-
-        link_distance_path = '../Test case data/link_distances.csv' #TODO: maybe incorporate into get_links function above?
+        self.delivery_cost = pd.read_csv(self.H2DeliveryFile_paths[0])
+        self.delivery_cost = self.delivery_cost[self.delivery_cost['Year'] == self.year]
+        self.cost_dict = dict(zip(self.delivery_cost['Delivery Method'], self.delivery_cost['OPEX ($/kg)']))
+        self.links['Transmission Opex ($/kg)'] = self.links['Delivery Method'].map(self.cost_dict) * \
+                                                  self.links['Link Distance'] / 100
+        
+        #### WAYS TO GENEREALIZE truck and link distances- rename truck LCOT
+        self.truck_cost = self.cost_dict['Truck']
+        link_distance_path = 'Inputs/networks/link_distances.csv' #TODO: maybe incorporate into get_links function above?
         self.link_distances = pd.read_csv(link_distance_path,index_col='Zone')
+        print(self.truck_cost)
 
-        link_opex = [comp_cost*(self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]/100) for link in self.links.index]
-        #add in $1.25/kg per 100-mi
-        self.links.insert(4,'Transmission Opex ($/kg)',link_opex)
-
-
-        for zone in self.all_zones:
-            if zone not in self.links_to_zones:
-                self.links_to_zones[zone] = set()
-
-        self.h2_conversion_efficiency=51
-        self.build_cost=get_build_cost_matrix(year=self.year,file='Build_Cost_Inputs_elec_cost_conservative.csv',all_zones=self.all_zones,includ_interconnection_cost = True)
-
-        """ self.PTC = dict()
-        for tech in self.techs:
-            if tech == 'Offshore_Wind' or tech=='Grid':
-                self.PTC[tech] = 0 #0.04
-            else:
-                self.PTC[tech] = 0.024 """
-
-        self.PTC = {
-            'Terrestrial_Wind': 0.024,
-            'Offshore_Wind': 0,
-            'Solar': 0.024,
-            'Grid':0
-        }
-
-        self.ITC = {
-            'Terrestrial_Wind': 0,
-            'Offshore_Wind': 0.04,
-            'Solar': 0,
-            'Grid':0
-        }
-
-        #TODO: eventually probably want to make this a dataframe instead of nested dictionary
-        self.storage_capacities = dict()
-        for st in self.stor_techs:
-            self.storage_capacities[st] = dict()
-
-        #caverns first, manual for now
-        for zone in self.all_zones:
-            self.storage_capacities['Cavern'][zone] = 0
-
-        #now tanks
-        for zone in self.all_zones:
-            self.storage_capacities['Tank'][zone] = 'inf'
-
-        #disallow tank storage in HI and J
-        self.storage_capacities['Tank']['HI'] = 0
-        self.storage_capacities['Tank']['J'] = 0
-
-        self.storage_capacities['Cavern']['CS'] = 8000000
-
-        #now set total storage capacities, again manual for now
-        self.Total_storage_capacity = dict()
-        self.Total_storage_capacity['Tank'] = 'inf'
-        self.Total_storage_capacity['Cavern'] = 'inf'
-
-        #import controls
-        self.max_imports = self.demand.sum().sum()/4
-        self.import_zones = {'F'} #zones which can import hydrogen
-
-        self.overserved_cost = 5 #$/kg
-
-        #RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
+        ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
         self.re_opex = pd.DataFrame(data=0,index=self.techs,columns=self.all_zones)
         self.re_opex.loc['Grid'] = 0.2 #$/kWh (LCOE)
 
-        #Time controls
-        self.all_renewable_profiles=self.all_renewable_profiles.loc['1 Jan '+str(self.year): '7 Jan '+str(self.year)]
+        self.build_cost = get_build_cost_matrix(self.interest,self.payback_years, self.payback_years_tank,self.payback_years_electrolyzer, self.REcostFiles_paths,self.ProductioncostFiles_paths,self.H2StorageFile_paths,self.year,self.all_zones)
 
-        self.year_ratio=len((self.all_renewable_profiles).resample('d').first())/365 # used to estimate total costs for year. Just used for testing. 
+        self.H2_prod_cost = pd.read_csv(self.ProductioncostFiles_paths[0])
+        self.h2_conversion_efficiency = float(self.H2_prod_cost[self.H2_prod_cost['Year']==self.year]['efficiency(kWh/kg)'])
+
+        self.RE_incentives = pd.read_csv(self.IncentiveFiles_paths[0])
+        self.RE_incentives = self.RE_incentives[self.RE_incentives['Year'] == self.year]
+        self.ITC = dict(zip(self.RE_incentives['Tech'], self.RE_incentives['ITC ($/kg)'].fillna(0)))
+        self.PTC = dict(zip(self.RE_incentives['Tech'], self.RE_incentives['PTC ($/kg)'].fillna(0)))
+
+        
+        self.storage_capacities = pd.read_csv(self.StorageCapacityFiles_paths[0]).set_index('Zone')
+        self.storage_capacities = self.storage_capacities.applymap(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))
+        self.storage_capacities = {index: row.to_dict() for index, row in self.storage_capacities.iterrows()}
+
+        self.H2_Storage_Limit = pd.read_csv(self.StorageLimitsFiles_paths[0])
+        self.H2_Storage_Limit['capacity'] = self.H2_Storage_Limit['capacity'].astype(str)
+        self.Total_storage_capacity = dict(zip(self.H2_Storage_Limit['Storage Tech'], self.H2_Storage_Limit['capacity'].str.strip("'").replace('inf', 'inf')))
+
+        print(self.Total_storage_capacity)
+        self.max_imports = self.demand.sum().sum() * self.max_imports_ratio
+        self.Cost_of_Unserved_H2 = yaml_data.get('Cost_of_Unserved_H2', None)
+        #self.Storage_charge_limit =yaml_data.get('Storage_charge_limit', None)
+        self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit']))
+        #self.Storage_discharge_limit =yaml_data.get('Storage_discharge_limit', None)
+        self.Storage_discharge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['discharge limit']))
+        #self.Storage_charge_cost =yaml_data.get('Storage_charge_cost', None)
+        self.Storage_charge_cost = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge_cost ($/kg)']))
+        
+        self.bigM = yaml_data.get('bigM',None)
+        print(self.bigM)
+
+        self.all_renewable_profiles = self.all_renewable_profiles.loc[self.start + str(self.year): self.end + str(self.year)]
+        self.year_ratio = len(self.all_renewable_profiles.resample('d').first()) / 365
         self.max_imports *= self.year_ratio
-
-        self.build_cost=self.build_cost*self.year_ratio
-
-        # Controls for iteration with or without explicit pipeline optimization
+        self.build_cost *= self.year_ratio
 
         if optimize_pipelines:
             #first iteration
@@ -146,8 +147,16 @@ class HYPSTAT:
 
         if self.h != 1: #TODO: think about time resolution, for now leave as minimum 1 hour
             self.all_renewable_profiles = self.all_renewable_profiles.resample('{}h'.format(self.h)).sum()
-            self.demand = self.demand.resample('{}h'.format(self.h)).sum()        
+            self.demand = self.demand.resample('{}h'.format(self.h)).sum()
 
+        
+
+    def create_year_tech_dict(self, REcostFiles):
+        year_tech_dict = {}
+        for year, group in REcostFiles.groupby('Year'):
+            year_tech_dict[year] = list(group['Tech'])
+        return year_tech_dict
+    
     def load_model(self,optimize_pipelines=False):
         self.m = ConcreteModel()
 
@@ -163,6 +172,7 @@ class HYPSTAT:
         
         # This set defined the index for the renewable profiles.
         self.m.Renewable_producers = Set(initialize=list(self.capacities.index), ordered=True) #TODO: rename to be more clear (e.g., tranches)
+        print(list(self.capacities))
 
         '''
         TODO: SETS THAT ARE MISSING
@@ -174,23 +184,28 @@ class HYPSTAT:
 
 
         #cost_parameters: #TODO: maybe just convert to input variables (question for Steven?)
-        self.m.Cost_of_Unserved_H2 = Param(initialize=10e3) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
+        self.m.Cost_of_Unserved_H2 = Param(initialize=self.Cost_of_Unserved_H2) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
         self.m.h2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
         #self.m.Cavern_charge_limit = Param(initialize=(0.03/24)*self.h) #% of capacity per hour, from 3%/day
         #self.m.Cavern_discharge_limit = Param(initialize=(0.1/24)*self.h) #% of capacity per hour, from 10%/day
-
+        
+        ##### HOW to deal with self.h boolean and conditioning 
+        
+        #self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=self.Storage_charge_limit*self.h)
+        #self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize=self.Storage_discharge_limit*self.h)
         self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
         self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
-
+        
 
         #self.m.Tank_charge_cost = Param(initialize=0.06) #$/kg, opex for loading H2 storage tank
         #self.m.Cavern_charge_cost = Param(initialize=0.06) #$/kg, opex for loading salt cavern storage
-        self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize=0.06)
-        
+        self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize={str(st): self.Storage_charge_cost[st] for st in self.m.Stor_Techs})
+        print(self.Storage_charge_cost)
         #if self.Total_cavern_capacity != 'inf':
         #    self.m.Total_cavern_capacity = Param(initialize = self.Total_cavern_capacity) # kg
-        self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={st: self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
-
+        #self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={st: self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
+        #self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize=self.Total_storage_capacity)
+        self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={str(st): self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
 
         #Time varying variables
 
@@ -323,7 +338,7 @@ class HYPSTAT:
             #TODO: have upper bound on pipeline size as an input
             if optimize_pipelines:
                 def pipeline_exists_rule(m, link):
-                    bigM = 300000*self.h #kg/period, upper bound on pipeline capacity (~7000 TPD)
+                    bigM = self.bigM *self.h #kg/period, upper bound on pipeline capacity (~7000 TPD)
                     return m.Pipeline_Capacity[link] <= bigM*m.Pipeline_Exists[link]
                 
                 self.m.pipeline_exists_constraint = Constraint(self.m.Links,rule=pipeline_exists_rule)
@@ -457,9 +472,9 @@ class HYPSTAT:
             print('Setting up objective function...')
             #### Objective function
 
-            def get_CRF(interest=0.10, years=30):
+            def get_CRF(interest=self.interest, years=self.payback_years):
                 return (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
-
+            '''
             def objective_rule(m):
                 return (sum(
                         sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}_Storage'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #cost of storage build
@@ -486,8 +501,36 @@ class HYPSTAT:
                 )
                         
                 #log_infeasible_constraints(m)
-            self.m.objective = Objective(rule=objective_rule, sense=minimize)
+            '''
+            
+            def objective_rule(m):
+                return (sum(
+                        sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #cost of storage build
+                        m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM Electrolyzer',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
+                        sum(m.H2_Unserved[t, zone] * m.Cost_of_Unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
+                        sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
+                        sum(sum(m.Pipeline_Cost[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
+                        sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
+                        #TODO: consider variable opex for generation techs (e.g., to use LCOE)
+                        #TODO: consider variable opex for hydrogen production techs
+                        #TODO: consider CAPEX for tank-based based
+                        #TODO: convert pipeline costs into inputs
+                        sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
+                        sum(sum(sum(m.Storage_Cost[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
+                        sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
 
+                        #electricity opex
+                        sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
+                        # could loop through just grid connected zones or something like that
+
+                        #TODO: handle PTC/ITC in inputs
+                        -sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
+                        -sum(sum(sum((m.Electricity_Potential[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) #ITC effects
+                )
+                        
+                #log_infeasible_constraints(m)
+            self.m.objective = Objective(rule=objective_rule, sense=minimize)
+            
     def solve_model(self,optimize_pipelines=False):
         stream_solver=True
         print('Solving')
@@ -648,7 +691,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('Test Cases/test_case_recast_elec_prod2')
+test.write_outputs('Test Cases/test_case_inputs')
 print('Done!')
 
 '''
@@ -678,4 +721,5 @@ Test cases:
         test_case_grid3: same as above, with mid-price electricity ($0.05/kWh)
         test_case_recast_elec_prod: same as test_case_grid3, but with electricity recast to include a specific variable for amount of used electricity (more intuitive)
         test_case_recast_elec_prod2: same as test_case_grid but with electricity recast as above (but should build no grid electricity)
+        test_case_inputs: Yijin made test case with new inputs generalized and replaced
         '''

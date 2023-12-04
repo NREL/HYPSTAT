@@ -78,7 +78,7 @@ class HYPSTAT:
         self.links['Transmission Opex ($/kg)'] = self.links['Delivery Method'].map(self.cost_dict) * \
                                                   self.links['Link Distance'] / 100
         
-        #### WAYS TO GENEREALIZE truck and link distances 
+        #### WAYS TO GENEREALIZE truck and link distances- rename truck LCOT
         self.truck_cost = self.cost_dict['Truck']
         link_distance_path = 'Inputs/networks/link_distances.csv' #TODO: maybe incorporate into get_links function above?
         self.link_distances = pd.read_csv(link_distance_path,index_col='Zone')
@@ -189,7 +189,7 @@ class HYPSTAT:
         #self.m.Cavern_charge_limit = Param(initialize=(0.03/24)*self.h) #% of capacity per hour, from 3%/day
         #self.m.Cavern_discharge_limit = Param(initialize=(0.1/24)*self.h) #% of capacity per hour, from 10%/day
         
-        ##### HOW to deal with self.h
+        ##### HOW to deal with self.h boolean and conditioning 
         
         #self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=self.Storage_charge_limit*self.h)
         #self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize=self.Storage_discharge_limit*self.h)

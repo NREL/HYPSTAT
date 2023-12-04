@@ -18,14 +18,14 @@ Storage_charge_limit : 0.03 # 3% per day
 Storage_discharge_limit : 0.1 # 10% per day
 Storage_charge_cost :  0.06 #$/kg
 bigM : 300000 #kg/period, upper bound on pipeline capacity (~7000 TPD)
-Total_storage_capacity_Tank : 'inf'
+#Total_storage_capacity_Tank : 'inf'
 #Total_storage_capacity_Cavern : 'inf'
 
 #Time controls (use for intrayear analysis)
 start : '1 Jan ' #start date for intrayear analysis 
 end : '7 Jan ' # end date for intrayear analysis
 
-#Financial parameter
+#Financial parameter (recovery factor)
 interest  : 0.10
 payback_years : 30
 payback_years_tank  : 30
