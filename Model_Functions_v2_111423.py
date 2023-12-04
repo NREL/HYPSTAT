@@ -11,7 +11,7 @@ def get_renewable_profiles(year, techs, path, drop_capacity_below=False):
     all_capacities = []
 
     for tech in techs:
-        #tech = tech.replace('_', ' ')
+        tech = tech.replace('_', ' ')
         tech_profiles = []
         tech_files = [f for f in files if tech in f and str(year) in f]
         zones_from_files = []
@@ -85,11 +85,8 @@ def get_demand(all_renewable_profiles, year, daily_demand, freq, file_path):
 
     return demand
 
-def get_links(path, unconstrained=False):
-    if unconstrained:
-        links = pd.read_csv('../Test case data/unlimited_links.csv').set_index('Link')
-    else:
-        links = pd.read_csv(path).set_index('Link')
+def get_links(path):
+    links = pd.read_csv(path).set_index('Link')
 
     all_zones = links[['End zone', 'Start zone']].stack().unique()
     links = links.loc[~links['Delivery Method'].isna()]
@@ -111,4 +108,39 @@ def get_link_flow_direction(links, separator=' to '):
         link_flow_direction.loc[link, tn] = 1
 
     return link_flow_direction.fillna(0)
+
+
+def get_build_cost_matrix(interest,payback_years, payback_years_tank,payback_years_electrolyzer, REcostFiles_paths,ProductioncostFiles_paths,H2StorageFile_paths,year,all_zones):
+    '''
+    This function returns a matrix with the annualised build cost for each node
+    '''
+    #technology_build=pd.read_csv('/Users/yli6/Desktop/NREL/Project/NYSERDA Project/NYSERDA Task 1-3/Scenario Tool/Scenario_Tool_Github/NYSERDA_Scenario_Tool/Temporal/NREL_data/Cost_data/'+file)
+    RE_technology_build = pd.read_csv(REcostFiles_paths[0]).set_index(['Year','Tech'])
+    H2_technology_build = pd.read_csv(ProductioncostFiles_paths[0]).set_index(['Year','Tech'])
+    H2_storage_build = pd.read_csv (H2StorageFile_paths[0]).set_index(['Year','Tech'])
+
+
+    build_cost=pd.DataFrame()
+    for tech in RE_technology_build.index.get_level_values(1).unique():
+        for zone in all_zones:
+            for (year,tech) in RE_technology_build.index:
+                build_cost.loc[tech,zone]=get_annuity((RE_technology_build.loc[(year,tech),'CAPEX($/kW)']+RE_technology_build.loc[(year,tech),'InterconnectionCost($/kW)']), interest, payback_years) + RE_technology_build.loc[(year,tech),'OPEX($/kW-yr)']
+            for (year,tech) in H2_technology_build.index:
+                build_cost.loc[tech,zone]=get_annuity(H2_technology_build.loc[(year,tech),'CAPEX($/kW)'], interest, payback_years_electrolyzer) + H2_technology_build.loc[(year,tech),'OPEX($/kW-yr)']
+            for (year,tech) in H2_storage_build.index:
+                build_cost.loc[tech,zone]=get_annuity(H2_storage_build.loc[(year,tech),'CAPEX ($/kg)'], interest, payback_years_tank) + H2_storage_build.loc[(year,tech),'OPEX ($/kg)']
+
+    #build_cost.index=build_cost.index.str.replace(' ','_')
+    
+    return build_cost
+
+def get_annuity(capex, interest, years):
+    '''
+    The function provides the annual repayment formula to calculate the annual payment amount for your loan. 
+    '''
+    #if interest>1:
+    #    interest = interest / 100  # conversion from %
+    an = capex  * (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
+    
+    return an
 

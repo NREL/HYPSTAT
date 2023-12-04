@@ -1,40 +1,66 @@
 #Model condition 
+studiedyear  :   2050 # Units: yr
 firstYear         : 2030  # Units: yr
 lastYear          : 2050  # Units: yr
 timeWindow        : 10  # Units: yr
 senario           : 'Best_Guess'  # Scenario for the run
 
 #Import
-allow_import  : False
-import_amount : 0.25 # 25% of the total hydrogen system demand
-import_zones  : {'F'} #zones which can import hydrogen
+max_imports_ratio : 0.25 # 25% of the total hydrogen system demand
+import_zones  : ['F'] #zones which can import hydrogen
 
 #Model constrain:
-ruck_size_limit  : 4166 #kg/hr, 100 trucks/day * 1000kg/truck /24 hr/day
+truck_size_limit  : 4166 #kg/hr, 100 trucks/day * 1000kg/truck /24 hr/day
 hydrogen_overserved_cost  : 5 #$/kg
+
+Cost_of_Unserved_H2 : 1000 #$/kg
+Storage_charge_limit : 0.03 # 3% per day
+Storage_discharge_limit : 0.1 # 10% per day
+Storage_charge_cost :  0.06 #$/kg
+bigM : 300000 #kg/period, upper bound on pipeline capacity (~7000 TPD)
+Total_storage_capacity_Tank : 'inf'
+#Total_storage_capacity_Cavern : 'inf'
 
 #Time controls (use for intrayear analysis)
 start : '1 Jan ' #start date for intrayear analysis 
-end : '31 Dec' # end date for intrayear analysis
+end : '7 Jan ' # end date for intrayear analysis
+
+#Financial parameter
+interest  : 0.10
+payback_years : 30
+payback_years_tank  : 30
+payback_years_electrolyzer  : 40
+
+#Networks and zones
+all_zones : ['A','BN', 'BS', 'CN', 'CS', 'E','EN','F','GE','GW','HI','J','K']
 
 #FilePath:
 demandFile:
   - "Inputs/demand/h2_demand.tsv"
 
 REcostFile:
-  - "Inputs/financials/renewable-build-costs.csv"
+  - "Inputs/technology_financials/renewable-build-cost.csv"
 
 ProductioncostFile:
-  - "Inputs/financials/Renewable-production-costs.csv"
+  - "Inputs/technology_financials/hydrogen-production-cost.csv"
+
+H2DeliveryFile:
+  - "Inputs/technology_financials/hydrogen-delivery-cost.csv"
+
+H2StorageFile:
+  - "Inputs/technology_financials/hydrogen-storage-cost.csv"
 
 SupplycurveFolder:
-  - "Inputs/supply_curves/Temporal_Supply_Files_with_Clustering_final_221118"
+  - "Inputs/supply_curves"
 
 NetworksFiles:
-  - "Inputs/networks/2030_Best_Guess_links.csv"
-  - "Inputs/networks/2040_Best_Guess_links.csv"
-  - "Inputs/networks/2050_Best_Guess_links.csv"
+  - "Inputs/networks/unlimited_links.csv"
 
-LinkdistanceFile:
-  - "Inputs/networks/link_distances.csv"
+IncentiveFiles:
+  - "Inputs/policy/renewable-incentives.csv"
 
+StorageCapacityFiles:
+  - "Inputs/storage/storage_capacities.csv"
+
+StorageLimitsFiles:
+  - "Inputs/storage/storage_constrain.csv"
