@@ -163,25 +163,29 @@ class HYPSTAT:
         #Define time and node index sets
         self.t_dict = {ind + 1: k for ind, k in enumerate(self.all_renewable_profiles.index)}
 
-        #setup model index sets
+        ### INDEX SETS ###
         self.m.T = Set(initialize=(sorted(list(self.t_dict.keys()))), ordered=True) # sort t_dict
         self.m.Zones = Set(initialize=list(self.all_zones), ordered=True)
         self.m.Links = Set(initialize=list(self.links.index), ordered=True)
         self.m.Techs = Set(initialize=list(self.techs), ordered=True) #TODO: rename for more specific to RE generators
         self.m.Stor_Techs = Set(initialize=list(self.stor_techs),ordered=True)
+<<<<<<< Updated upstream
         
         # This set defined the index for the renewable profiles.
         self.m.Renewable_producers = Set(initialize=list(self.capacities.index), ordered=True) #TODO: rename to be more clear (e.g., tranches)
         print(list(self.capacities))
+=======
+        self.m.Renewable_producers = Set(initialize=list(self.capacities.index), ordered=True) # This set defined the index for the renewable profiles. #TODO: rename to be more clear (e.g., tranches)
+>>>>>>> Stashed changes
 
         '''
         TODO: SETS THAT ARE MISSING
         -H2 production techs
         -tank-based transmission techs
-
         -Pipelines? Maybe extra tranches
         '''
 
+<<<<<<< Updated upstream
 
         #cost_parameters: #TODO: maybe just convert to input variables (question for Steven?)
         self.m.Cost_of_Unserved_H2 = Param(initialize=self.Cost_of_Unserved_H2) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
@@ -206,36 +210,55 @@ class HYPSTAT:
         #self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={st: self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
         #self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize=self.Total_storage_capacity)
         self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={str(st): self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
+=======
+        ### COST AND PERFORMANCE PARAMETERS ###
+        #TODO: maybe just convert to input variables (question for Steven?)
+        self.m.Cost_of_Unserved_H2 = Param(initialize=10e3) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
+        self.m.h2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
+        self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
+        self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
+        self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize=0.06)
+        self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={st: self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
 
-        #Time varying variables
+>>>>>>> Stashed changes
 
-        #TODO: will need to add variable for specific flows of electricity to specific production types
-        self.m.Storage_Discharge_Charge = Var(self.m.Stor_Techs,self.m.T,self.m.Zones)
-        self.m.Storage_Level = Var(self.m.Stor_Techs,self.m.T,self.m.Zones,domain=NonNegativeReals)
-        self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Zones,domain=NonNegativeReals)
-        
-        self.m.Link_Flow = Var(self.m.T, self.m.Links)  # (kg/per interval i.e. kg/h)
-        self.m.Pipeline_Flow = Var(self.m.T, self.m.Links) #(kg/per interval, i.e., kg/h) Pipeline flow
-        self.m.Truck_Flow = Var(self.m.T,self.m.Links)
-        self.m.Electricity_Potential  = Var(self.m.Techs, self.m.T, self.m.Zones)  #kWh 
-        self.m.Electricity_Used = Var(self.m.Techs, self.m.T, self.m.Zones) #kWh
-        self.m.Renewable_Capacity = Var(self.m.Techs,self.m.Zones,self.m.Renewable_producers, domain=NonNegativeReals)  #kw
-        self.m.Hydrogen_Production = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)   #kg/per interval #TODO: split into different types of production
-        self.m.H2_Unserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )   #kg/per interval
-        self.m.H2_Overserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )  
+        ### CAPACITY VARIABLES ###
+        self.m.Renewable_Capacity = Var(self.m.Techs,self.m.Zones,self.m.Renewable_producers, domain=NonNegativeReals)  #kW
         self.m.Electrolyser_Capacity = Var(self.m.Zones, domain=NonNegativeReals) #TODO: split into different types of production (maybe rename)
-        self.m.Electricity_Curtailed = Var(self.m.Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) 
-        self.m.H2_Imports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) # imported hydrogen, kg/interval
-
-        self.m.Demand_Met = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)# kg per interval #TODO: rename H2_demand_met or similar
-        self.m.Pipeline_Cost = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #$/kg #TODO: rename all of these to specify OPEX
-        self.m.Truck_Cost = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #$/kg #TODO: rename all of these to specify OPEX, TODO: generalize to all tank-based transmission
-        
-        self.m.Storage_Cost = Var(self.m.Stor_Techs,self.m.T,self.m.Zones, domain=NonNegativeReals)
-
+        self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Zones,domain=NonNegativeReals)
         self.m.Pipeline_Capacity = Var(self.m.Links, domain = NonNegativeReals) # kg/period pipeline capacity for each zone
         if optimize_pipelines:
             self.m.Pipeline_Exists = Var(self.m.Links,domain=Binary) #whether or not a pipeline exists
+        
+        
+        ### PRODUCTION AND FLOW VARIABLES ###
+
+        #TODO: will need to add variable for specific flows of electricity to specific production types
+
+        # Electricity
+        self.m.Electricity_Potential  = Var(self.m.Techs, self.m.T, self.m.Zones)  #kWh 
+        self.m.Electricity_Used = Var(self.m.Techs, self.m.T, self.m.Zones) #kWh
+        self.m.Electricity_Curtailed = Var(self.m.Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) #kWh
+
+        # Hydrogen
+        self.m.H2_Production = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)   #kg/per interval #TODO: split into different types of production
+        self.m.H2_Demand_Met = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)# kg per interval #TODO: rename H2_demand_met or similar
+        self.m.H2_Unserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )   #kg/per interval
+        self.m.H2_Overserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )  
+        self.m.H2_Imports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) # imported hydrogen, kg/interval
+
+        # Storage
+        self.m.Storage_Charge = Var(self.m.Stor_Techs,self.m.T,self.m.Zones)
+        self.m.Storage_Level = Var(self.m.Stor_Techs,self.m.T,self.m.Zones,domain=NonNegativeReals)
+        self.m.Storage_Charge_OPEX = Var(self.m.Stor_Techs,self.m.T,self.m.Zones, domain=NonNegativeReals)
+        
+        # Transmission
+        self.m.Link_Flow = Var(self.m.T, self.m.Links)  # (kg/per interval i.e. kg/h)
+        self.m.Pipeline_Flow = Var(self.m.T, self.m.Links) #(kg/per interval, i.e., kg/h) Pipeline flow
+        self.m.Truck_Flow = Var(self.m.T,self.m.Links)
+        self.m.Pipeline_OPEX = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #$/kg #TODO: rename all of these to specify OPEX
+        self.m.Truck_Cost = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #$/kg #TODO: rename all of these to specify OPEX, TODO: generalize to all tank-based transmission
+        
 
     def load_constraints(self,optimize_pipelines=False):
         # pipeline flow incidence matrix
@@ -250,12 +273,12 @@ class HYPSTAT:
 
             def demand_rule(m, t, zone):
                 if t%24==1:
-                    return (sum(m.Demand_Met[t_step,zone] for t_step in range(t,t+24)) == sum(self.demand.loc[self.t_dict[t_step],zone] for t_step in range(t,t+24))) #TODO: May need to revise to consider 'h' value
+                    return (sum(m.H2_Demand_Met[t_step,zone] for t_step in range(t,t+24)) == sum(self.demand.loc[self.t_dict[t_step],zone] for t_step in range(t,t+24))) #TODO: May need to revise to consider 'h' value
                 else:
                     return Constraint.Skip
 
             def demand_rule_2(m, t, zone):
-                return (m.Demand_Met[t,zone] == self.demand.loc[self.t_dict[t],zone])
+                return (m.H2_Demand_Met[t,zone] == self.demand.loc[self.t_dict[t],zone])
 
             #m.demand_constraint = Constraint(m.T, m.Zones, rule=demand_rule)
             self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=demand_rule_2)
@@ -279,9 +302,9 @@ class HYPSTAT:
             # TODO: clarify point within the hour that we mean for storage, transmission, etc.
             def Storage_mutli_period_rule(m, stor_tech, t, zone):
                 if t == m.T.first():
-                    return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Discharge_Charge[stor_tech,t,zone]
+                    return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Charge[stor_tech,t,zone]
                 else:
-                    return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Discharge_Charge[stor_tech, t, zone])
+                    return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Charge[stor_tech, t, zone])
 
             self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
 
@@ -291,7 +314,7 @@ class HYPSTAT:
                     return Constraint.Skip
                     #Could also use just a really large number but probably leave as skip constraint
                 else:
-                    return (m.Storage_Discharge_Charge[stor_tech, t, zone] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
+                    return (m.Storage_Charge[stor_tech, t, zone] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
             
             self.m.Storage_charge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_charge_rule)
 
@@ -299,7 +322,7 @@ class HYPSTAT:
                 if m.Storage_discharge_limit[stor_tech]=='inf':
                     return Constraint.Skip
                 else:
-                    return (m.Storage_Discharge_Charge[stor_tech, t, zone] >= -m.Storage_discharge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
+                    return (m.Storage_Charge[stor_tech, t, zone] >= -m.Storage_discharge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
 
             self.m.Storage_discharge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_discharge_rule)
 
@@ -425,7 +448,7 @@ class HYPSTAT:
                 # TODO: will need to think about how renewable production matches up with H2 production
                 # TODO: create variables for specification of electricity flows from each RE tech to each H2 production tech
             def H2_Production_rule(m, t, zone):
-                return m.Hydrogen_Production[t, zone] == (sum(m.Electricity_Used[tech, t, zone] for tech in m.Techs))/m.h2_conversion_efficiency
+                return m.H2_Production[t, zone] == (sum(m.Electricity_Used[tech, t, zone] for tech in m.Techs))/m.h2_conversion_efficiency
 
             self.m.H2_Production_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Production_rule)
 
@@ -433,22 +456,22 @@ class HYPSTAT:
             # H2 balance considering link flows
             def H2_Balance_rule(m, t, zone):
                 links_to_this_zone=self.links_to_zones[zone]
-                return (m.Hydrogen_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
-                        sum(m.Storage_Discharge_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.Demand_Met[t, zone] + m.H2_Overserved[t, zone] )
+                return (m.H2_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
+                        sum(m.Storage_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, zone] + m.H2_Overserved[t, zone] )
 
             self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Balance_rule)
 
             print('Setting up transmission cost constraints...')
             #TODO: work out in inputs somewhere how to add multipliers for links or set link costs in some specific way (or disallow links)
-            def Forward_Pipeline_Cost_rule(m, t, link):
-                return (m.Pipeline_Cost[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
+            def Forward_Pipeline_OPEX_rule(m, t, link):
+                return (m.Pipeline_OPEX[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
 
-            self.m.Forward_Pipeline_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Pipeline_Cost_rule)
+            self.m.Forward_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Pipeline_OPEX_rule)
 
-            def Reverse_Pipeline_Cost_rule(m, t, link):
-                return (m.Pipeline_Cost[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
+            def Reverse_Pipeline_OPEX_rule(m, t, link):
+                return (m.Pipeline_OPEX[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
 
-            self.m.Reverse_Pipeline_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_Cost_rule)
+            self.m.Reverse_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_OPEX_rule)
 
             def Forward_Truck_Cost_rule(m, t, link): #TODO: generalize to all tank transport
                 return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.truck_cost*(self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]/100))
@@ -463,10 +486,10 @@ class HYPSTAT:
             print('Setting up storage cost constraints...')
             # TODO: allow for variable opex on discharge if desired by user
 
-            def Storage_Cost_rule(m, stor_tech, t, zone):
-                return (m.Storage_Cost[stor_tech,t,zone] >= m.Storage_Discharge_Charge[stor_tech,t,zone]*m.Storage_charge_cost[stor_tech])
+            def Storage_Charge_OPEX_rule(m, stor_tech, t, zone):
+                return (m.Storage_Charge_OPEX[stor_tech,t,zone] >= m.Storage_Charge[stor_tech,t,zone]*m.Storage_charge_cost[stor_tech])
 
-            self.m.Storage_Cost_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_Cost_rule)
+            self.m.Storage_Charge_OPEX_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_Charge_OPEX_rule)
 
 
             print('Setting up objective function...')
@@ -481,14 +504,14 @@ class HYPSTAT:
                         m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM_Electrolyser',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
                         sum(m.H2_Unserved[t, zone] * m.Cost_of_Unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
                         sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
-                        sum(sum(m.Pipeline_Cost[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
+                        sum(sum(m.Pipeline_OPEX[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
                         sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
                         #TODO: consider variable opex for generation techs (e.g., to use LCOE)
                         #TODO: consider variable opex for hydrogen production techs
                         #TODO: consider CAPEX for tank-based based
                         #TODO: convert pipeline costs into inputs
                         sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
-                        sum(sum(sum(m.Storage_Cost[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
+                        sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
                         sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
 
                         #electricity opex
@@ -641,9 +664,9 @@ class HYPSTAT:
         Renewable_Capacity = pd.Series(self.m.Renewable_Capacity.extract_values(), index=self.m.Renewable_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity.to_csv(results_dir+'/Renewable_Capacity.csv')
 
-        Storage_Discharge_Charge = pd.Series(self.m.Storage_Discharge_Charge.extract_values(), index=self.m.Storage_Discharge_Charge.extract_values().keys()).unstack()
-        Storage_Discharge_Charge.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Discharge_Charge.index],names=Storage_Discharge_Charge.index.names)
-        Storage_Discharge_Charge.to_csv(results_dir+'/Storage_Discharge_Charge.csv')
+        Storage_Charge = pd.Series(self.m.Storage_Charge.extract_values(), index=self.m.Storage_Charge.extract_values().keys()).unstack()
+        Storage_Charge.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Charge.index],names=Storage_Charge.index.names)
+        Storage_Charge.to_csv(results_dir+'/Storage_Discharge_Charge.csv')
 
         H2_Unserved = pd.Series(self.m.H2_Unserved.extract_values(), index=self.m.H2_Unserved.extract_values().keys()).unstack()
         H2_Unserved.index=list(self.t_dict.values())
@@ -652,9 +675,9 @@ class HYPSTAT:
         Zone_Capacities.loc['H2_Unserved_Capacity']=H2_Unserved.max()
         Zone_Capacities.to_csv(results_dir+'/Zone_Capacities.csv')
 
-        Hydrogen_Production = pd.Series(self.m.Hydrogen_Production.extract_values(), index=self.m.Hydrogen_Production.extract_values().keys()).unstack()
-        Hydrogen_Production.index=list(self.t_dict.values())
-        Hydrogen_Production.to_csv(results_dir+'/H2_Production.csv')
+        H2_Production = pd.Series(self.m.H2_Production.extract_values(), index=self.m.H2_Production.extract_values().keys()).unstack()
+        H2_Production.index=list(self.t_dict.values())
+        H2_Production.to_csv(results_dir+'/Hydrogen_Production.csv')
 
         Curtailed_Renewable_Production = pd.Series(self.m.Electricity_Curtailed.extract_values(), index=self.m.Electricity_Curtailed.extract_values().keys()).unstack()
         Curtailed_Renewable_Production = pd.DataFrame(Curtailed_Renewable_Production)
@@ -670,7 +693,7 @@ class HYPSTAT:
         Pipeline_Capacity = pd.Series(self.m.Pipeline_Capacity.extract_values(), index=self.m.Pipeline_Capacity.extract_values().keys())    
         Pipeline_Capacity.to_csv(results_dir+'/Pipeline_Capacity.csv')
 
-        Demand_Met = pd.Series(self.m.Demand_Met.extract_values(),index=self.m.Demand_Met.extract_values().keys()).unstack()
+        Demand_Met = pd.Series(self.m.H2_Demand_Met.extract_values(),index=self.m.H2_Demand_Met.extract_values().keys()).unstack()
         Demand_Met.index=list(self.t_dict.values())
         Demand_Met.to_csv(results_dir+'/Demand_Met.csv')
 
