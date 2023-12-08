@@ -169,14 +169,7 @@ class HYPSTAT:
         self.m.Links = Set(initialize=list(self.links.index), ordered=True)
         self.m.Techs = Set(initialize=list(self.techs), ordered=True) #TODO: rename for more specific to RE generators
         self.m.Stor_Techs = Set(initialize=list(self.stor_techs),ordered=True)
-<<<<<<< Updated upstream
-        
-        # This set defined the index for the renewable profiles.
-        self.m.Renewable_producers = Set(initialize=list(self.capacities.index), ordered=True) #TODO: rename to be more clear (e.g., tranches)
-        print(list(self.capacities))
-=======
         self.m.Renewable_producers = Set(initialize=list(self.capacities.index), ordered=True) # This set defined the index for the renewable profiles. #TODO: rename to be more clear (e.g., tranches)
->>>>>>> Stashed changes
 
         '''
         TODO: SETS THAT ARE MISSING
@@ -185,42 +178,19 @@ class HYPSTAT:
         -Pipelines? Maybe extra tranches
         '''
 
-<<<<<<< Updated upstream
 
-        #cost_parameters: #TODO: maybe just convert to input variables (question for Steven?)
         self.m.Cost_of_Unserved_H2 = Param(initialize=self.Cost_of_Unserved_H2) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
         self.m.h2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
-        #self.m.Cavern_charge_limit = Param(initialize=(0.03/24)*self.h) #% of capacity per hour, from 3%/day
-        #self.m.Cavern_discharge_limit = Param(initialize=(0.1/24)*self.h) #% of capacity per hour, from 10%/day
         
         ##### HOW to deal with self.h boolean and conditioning 
         
-        #self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=self.Storage_charge_limit*self.h)
-        #self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize=self.Storage_discharge_limit*self.h)
         self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
         self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
         
 
-        #self.m.Tank_charge_cost = Param(initialize=0.06) #$/kg, opex for loading H2 storage tank
-        #self.m.Cavern_charge_cost = Param(initialize=0.06) #$/kg, opex for loading salt cavern storage
         self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize={str(st): self.Storage_charge_cost[st] for st in self.m.Stor_Techs})
         print(self.Storage_charge_cost)
-        #if self.Total_cavern_capacity != 'inf':
-        #    self.m.Total_cavern_capacity = Param(initialize = self.Total_cavern_capacity) # kg
-        #self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={st: self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
-        #self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize=self.Total_storage_capacity)
         self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={str(st): self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
-=======
-        ### COST AND PERFORMANCE PARAMETERS ###
-        #TODO: maybe just convert to input variables (question for Steven?)
-        self.m.Cost_of_Unserved_H2 = Param(initialize=10e3) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
-        self.m.h2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
-        self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
-        self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
-        self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize=0.06)
-        self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={st: self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
-
->>>>>>> Stashed changes
 
         ### CAPACITY VARIABLES ###
         self.m.Renewable_Capacity = Var(self.m.Techs,self.m.Zones,self.m.Renewable_producers, domain=NonNegativeReals)  #kW
@@ -714,7 +684,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('Test Cases/test_case_inputs')
+test.write_outputs('Test Cases/test_case_inputs_merged')
 print('Done!')
 
 '''
@@ -745,4 +715,5 @@ Test cases:
         test_case_recast_elec_prod: same as test_case_grid3, but with electricity recast to include a specific variable for amount of used electricity (more intuitive)
         test_case_recast_elec_prod2: same as test_case_grid but with electricity recast as above (but should build no grid electricity)
         test_case_inputs: Yijin made test case with new inputs generalized and replaced
+        test_case_inputs_merged: testing that new input format merged with Joe's edits still works (NOTE: THIS HAS NOT BEEN RUN YET)
         '''
