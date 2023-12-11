@@ -502,14 +502,14 @@ class HYPSTAT:
                         m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM Electrolyzer',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
                         sum(m.H2_Unserved[t, zone] * m.Cost_of_Unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
                         sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
-                        sum(sum(m.Pipeline_Cost[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
+                        sum(sum(m.Pipeline_OPEX[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
                         sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
                         #TODO: consider variable opex for generation techs (e.g., to use LCOE)
                         #TODO: consider variable opex for hydrogen production techs
                         #TODO: consider CAPEX for tank-based based
                         #TODO: convert pipeline costs into inputs
                         sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
-                        sum(sum(sum(m.Storage_Cost[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
+                        sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
                         sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
 
                         #electricity opex

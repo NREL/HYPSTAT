@@ -20,8 +20,10 @@ def common_sums_match(df1, df2, count_no_shared_indices=False):
         return False
             
 
-test_dir = 'Test Cases/test_case_grid/' #should have the slash on the end
-comp_dir = 'Test Cases/test_case_inputs/' #should have the slash on the end
+#test_dir = 'HYPSTAT/HYPSTAT_github/Test Cases/test_case_gen_stor/' #should have the slash on the end
+#comp_dir = 'HYPSTAT/HYPSTAT_github/Test Cases/test_case_inputs_merged/' #should have the slash on the end
+test_dir = 'Test Cases/test_case_gen_stor/' #should have the slash on the end
+comp_dir = 'Test Cases/test_case_inputs_merged/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
