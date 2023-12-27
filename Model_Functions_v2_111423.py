@@ -144,3 +144,26 @@ def get_annuity(capex, interest, years):
     
     return an
 
+def get_producers(capacities,zone='A',tech = 'Terrestrial_Wind'):
+    '''
+    This function allows for the creation of a list of the max capacity of all profile for a node
+    It handles the case where a zone can't have a particular technology by returning an empty series
+    '''
+    if zone in capacities[tech].columns:
+        max_capacity=capacities[(tech,zone)]
+    else:
+        #return empty series if node does not exist in 'capacities'
+        max_capacity=pd.Series(dtype='float64')
+    return max_capacity.dropna()
+
+def get_producers_tech(tech_capacities,zone='A'):
+    '''
+    This function allows for the creation of a list of the max capacity of specific technology for a node
+    It handles the case where a zone can't have a particular technology by returning an empty series
+    '''
+    if zone in tech_capacities.columns:
+        max_capacity=tech_capacities[(zone)]
+    else:
+        #return empty series if node does not exist in 'capacities'
+        max_capacity=pd.Series(dtype='float64')
+    return max_capacity.dropna()

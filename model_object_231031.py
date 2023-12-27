@@ -14,7 +14,7 @@ from pathlib import Path  # Import Path to handle file paths
 
 from pyomo.environ import *
 
-from Model_Functions_v3 import *
+#from Model_Functions_v3 import *
 from Model_Functions_v2_111423 import *
 
 
@@ -167,9 +167,9 @@ class HYPSTAT:
         self.m.T = Set(initialize=(sorted(list(self.t_dict.keys()))), ordered=True) # sort t_dict
         self.m.Zones = Set(initialize=list(self.all_zones), ordered=True)
         self.m.Links = Set(initialize=list(self.links.index), ordered=True)
-        self.m.Techs = Set(initialize=list(self.techs), ordered=True) #TODO: rename for more specific to RE generators
+        self.m.Gen_Techs = Set(initialize=list(self.techs), ordered=True)
         self.m.Stor_Techs = Set(initialize=list(self.stor_techs),ordered=True)
-        self.m.Renewable_producers = Set(initialize=list(self.capacities.index), ordered=True) # This set defined the index for the renewable profiles. #TODO: rename to be more clear (e.g., tranches)
+        self.m.Gen_Tranches = Set(initialize=list(self.capacities.index), ordered=True) # This set defines the index for different resource qualities in a single location
 
         '''
         TODO: SETS THAT ARE MISSING
@@ -178,22 +178,19 @@ class HYPSTAT:
         -Pipelines? Maybe extra tranches
         '''
 
+        #TODO: HOW to deal with self.h boolean and conditioning 
 
-        self.m.Cost_of_Unserved_H2 = Param(initialize=self.Cost_of_Unserved_H2) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
-        self.m.h2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
-        
-        ##### HOW to deal with self.h boolean and conditioning 
-        
+        ### PARAMETERS ###
+        self.m.Cost_of_unserved_H2 = Param(initialize=self.Cost_of_Unserved_H2) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
+        self.m.H2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
         self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
         self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
-        
-
         self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize={str(st): self.Storage_charge_cost[st] for st in self.m.Stor_Techs})
-        print(self.Storage_charge_cost)
         self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={str(st): self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
 
+
         ### CAPACITY VARIABLES ###
-        self.m.Renewable_Capacity = Var(self.m.Techs,self.m.Zones,self.m.Renewable_producers, domain=NonNegativeReals)  #kW
+        self.m.Gen_Capacity = Var(self.m.Gen_Techs,self.m.Zones,self.m.Gen_Tranches, domain=NonNegativeReals)  #kW
         self.m.Electrolyser_Capacity = Var(self.m.Zones, domain=NonNegativeReals) #TODO: split into different types of production (maybe rename)
         self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Zones,domain=NonNegativeReals)
         self.m.Pipeline_Capacity = Var(self.m.Links, domain = NonNegativeReals) # kg/period pipeline capacity for each zone
@@ -206,9 +203,9 @@ class HYPSTAT:
         #TODO: will need to add variable for specific flows of electricity to specific production types
 
         # Electricity
-        self.m.Electricity_Potential  = Var(self.m.Techs, self.m.T, self.m.Zones)  #kWh 
-        self.m.Electricity_Used = Var(self.m.Techs, self.m.T, self.m.Zones) #kWh
-        self.m.Electricity_Curtailed = Var(self.m.Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) #kWh
+        self.m.Electricity_Potential  = Var(self.m.Gen_Techs, self.m.T, self.m.Zones)  #kWh 
+        self.m.Electricity_Used = Var(self.m.Gen_Techs, self.m.T, self.m.Zones) #kWh
+        self.m.Electricity_Curtailed = Var(self.m.Gen_Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) #kWh
 
         # Hydrogen
         self.m.H2_Production = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)   #kg/per interval #TODO: split into different types of production
@@ -231,298 +228,298 @@ class HYPSTAT:
         
 
     def load_constraints(self,optimize_pipelines=False):
-        # pipeline flow incidence matrix
-            def link_rule(m, link, zone):
-                return float(self.link_flow_direction.loc[link, zone])
+        # Load pipeline flow incidence matrix
+        def link_rule(m, link, zone):
+            return float(self.link_flow_direction.loc[link, zone])
 
-            self.m.link_flow_direction = Param(self.m.Links, self.m.Zones, initialize=link_rule)
+        self.m.link_flow_direction = Param(self.m.Links, self.m.Zones, initialize=link_rule)
 
-            print('Setting up storage constraints...')
+        ### DEMAND AND IMPORT CONSTRAINTS ###
+        print('Setting up demand and import constraints...')
 
-            # Meet demand over course of day
-
-            def demand_rule(m, t, zone):
-                if t%24==1:
-                    return (sum(m.H2_Demand_Met[t_step,zone] for t_step in range(t,t+24)) == sum(self.demand.loc[self.t_dict[t_step],zone] for t_step in range(t,t+24))) #TODO: May need to revise to consider 'h' value
-                else:
-                    return Constraint.Skip
-
-            def demand_rule_2(m, t, zone):
-                return (m.H2_Demand_Met[t,zone] == self.demand.loc[self.t_dict[t],zone])
-
-            #m.demand_constraint = Constraint(m.T, m.Zones, rule=demand_rule)
-            self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=demand_rule_2)
-
-            # Limit imports
-            def total_imports_rule(m):
-                return sum(sum(m.H2_Imports[t,zone] for t in m.T) for zone in m.Zones) <= self.max_imports
-            
-            self.m.total_imports_constraint = Constraint(rule=total_imports_rule)
-
-            # Tabling imports for now; #TODO: think about exports
-            def zone_imports_rule(m, t, zone):
-                if zone in self.import_zones:
-                    return Constraint.Skip
-                else:
-                    return m.H2_Imports[t,zone] == 0
-            
-            self.m.zone_imports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_imports_rule)
-
-            # Storage Charge Discharge, multi-period;
-            # TODO: clarify point within the hour that we mean for storage, transmission, etc.
-            def Storage_mutli_period_rule(m, stor_tech, t, zone):
-                if t == m.T.first():
-                    return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Charge[stor_tech,t,zone]
-                else:
-                    return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Charge[stor_tech, t, zone])
-
-            self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
-
-            # charge discharge speed
-            def Storage_charge_rule(m, stor_tech, t, zone):
-                if m.Storage_charge_limit[stor_tech]=='inf':
-                    return Constraint.Skip
-                    #Could also use just a really large number but probably leave as skip constraint
-                else:
-                    return (m.Storage_Charge[stor_tech, t, zone] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
-            
-            self.m.Storage_charge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_charge_rule)
-
-            def Storage_discharge_rule(m, stor_tech, t, zone):
-                if m.Storage_discharge_limit[stor_tech]=='inf':
-                    return Constraint.Skip
-                else:
-                    return (m.Storage_Charge[stor_tech, t, zone] >= -m.Storage_discharge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
-
-            self.m.Storage_discharge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_discharge_rule)
-
-            # Storage Level
-            # TODO: note in documentation that storage capacities need to be working capacities
-
-            def Storage_level_rule(m, stor_tech, t, zone):
-                return (m.Storage_Level[stor_tech, t, zone] <= m.Storage_Capacity[stor_tech, zone])
-
-            self.m.Storage_level_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_level_rule)
-
-            #TODO: consolidate all of this into some sort of input table with limits for each storage type and zone
-            #TODO: consider if we want to still have a total storage constraint
-
-            def Storage_capacity_cap_rule(m, stor_tech, zone):
-                cap = self.storage_capacities[stor_tech][zone]
-                if cap=='inf':
-                    return Constraint.Skip
-                else:
-                    return (m.Storage_Capacity[stor_tech, zone] <= cap)
-
-            self.m.Storage_capacity_cap_constraint = Constraint(self.m.Stor_Techs, self.m.Zones, rule=Storage_capacity_cap_rule)
-
-
-            def Total_storage_capacity_rule(m, stor_tech):
-                if m.Total_storage_capacity[stor_tech]=='inf':
-                    return Constraint.Skip
-                else:
-                    return (sum(m.Storage_Capacity[stor_tech, zone] for zone in m.Zones) <= m.Total_storage_capacity[stor_tech])
-
-            self.m.Total_storage_capacity_constraint = Constraint(self.m.Stor_Techs, rule=Total_storage_capacity_rule)
-            
-            print('Setting up flow constraints...')
-            # Pipeline flow (update this later to be part of the variable bound)
-
-            #TODO: have upper bound on pipeline size as an input
-            if optimize_pipelines:
-                def pipeline_exists_rule(m, link):
-                    bigM = self.bigM *self.h #kg/period, upper bound on pipeline capacity (~7000 TPD)
-                    return m.Pipeline_Capacity[link] <= bigM*m.Pipeline_Exists[link]
-                
-                self.m.pipeline_exists_constraint = Constraint(self.m.Links,rule=pipeline_exists_rule)
-            
+        # Option 1: Meet demand over course of day
+        def demand_rule(m, t, zone):
+            if t%24==1:
+                return (sum(m.H2_Demand_Met[t_step,zone] for t_step in range(t,t+24)) == sum(self.demand.loc[self.t_dict[t_step],zone] for t_step in range(t,t+24))) #TODO: May need to revise to consider 'h' value
             else:
-                #not optimizing pipelines, limit sizes according to links
+                return Constraint.Skip
 
-                #TODO: think about how pipeline capacity limits (i.e., which pipelines exist) is passed in the second iteration
+        # Option 2: Meet demand in each hour
+        def demand_rule_2(m, t, zone):
+            return (m.H2_Demand_Met[t,zone] == self.demand.loc[self.t_dict[t],zone])
 
-                def pipeline_size_rule(m, link):
-                    return m.Pipeline_Capacity[link] <= self.links.loc[link,'Capacity (kg/hr)']*self.h
-                
-                self.m.pipeline_size_constraint = Constraint(self.m.Links, rule=pipeline_size_rule)
+        #self.m.demand_constraint = Constraint(m.T, m.Zones, rule=demand_rule)
+        self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=demand_rule_2)
 
-            # Total link flow
-            def total_link_flow_rule(m, t, link):
-                return m.Link_Flow[t, link] == m.Pipeline_Flow[t, link] + m.Truck_Flow[t, link]
+        # Limit quantity of total imports
+        def total_imports_rule(m):
+            return sum(sum(m.H2_Imports[t,zone] for t in m.T) for zone in m.Zones) <= self.max_imports
+        
+        self.m.total_imports_constraint = Constraint(rule=total_imports_rule)
 
-            self.m.total_link_flow_constraint = Constraint(self.m.T, self.m.Links, rule=total_link_flow_rule)
+        # Restrict which zones are allowed to import
+        def zone_imports_rule(m, t, zone):
+            if zone in self.import_zones:
+                return Constraint.Skip
+            else:
+                return m.H2_Imports[t,zone] == 0
+        
+        self.m.zone_imports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_imports_rule)
+
+        #TODO: think about exports
+
+        ### STORAGE CONSTRAINTS ###
+        print('Setting up storage constraints...')
+
+        # TODO: clarify point within the hour that we mean for storage, transmission, etc.
+
+        # Constraint storage level based on inflow/outflow of storage
+        def Storage_mutli_period_rule(m, stor_tech, t, zone):
+            if t == m.T.first():
+                return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Charge[stor_tech,t,zone]
+            else:
+                return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Charge[stor_tech, t, zone])
+
+        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
+
+        # Constrain storage charge speed
+        def Storage_charge_rule(m, stor_tech, t, zone):
+            if m.Storage_charge_limit[stor_tech]=='inf':
+                return Constraint.Skip
+                #Could also use just a really large number but probably leave as skip constraint
+            else:
+                return (m.Storage_Charge[stor_tech, t, zone] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
+        
+        self.m.Storage_charge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_charge_rule)
+
+        # Constrain storage discharge speed
+        def Storage_discharge_rule(m, stor_tech, t, zone):
+            if m.Storage_discharge_limit[stor_tech]=='inf':
+                return Constraint.Skip
+            else:
+                return (m.Storage_Charge[stor_tech, t, zone] >= -m.Storage_discharge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone])
+
+        self.m.Storage_discharge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_discharge_rule)
+
+        
+        # TODO: note in documentation that storage capacities need to be working capacities
+        # Constrain storage level to be within capacity
+        def Storage_level_rule(m, stor_tech, t, zone):
+            return (m.Storage_Level[stor_tech, t, zone] <= m.Storage_Capacity[stor_tech, zone])
+
+        self.m.Storage_level_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_level_rule)
+
+        #TODO: consolidate all of this into some sort of input table with limits for each storage type and zone
+        #TODO: consider if we want to still have a total storage constraint
+
+        # Constrain storage capacity within each zone (e.g., for geologic limitations)
+        def Storage_capacity_cap_rule(m, stor_tech, zone):
+            cap = self.storage_capacities[stor_tech][zone]
+            if cap=='inf':
+                return Constraint.Skip
+            else:
+                return (m.Storage_Capacity[stor_tech, zone] <= cap)
+
+        self.m.Storage_capacity_cap_constraint = Constraint(self.m.Stor_Techs, self.m.Zones, rule=Storage_capacity_cap_rule)
+
+        # Constrain total storage capacity among all storage of a given type
+        def Total_storage_capacity_rule(m, stor_tech):
+            if m.Total_storage_capacity[stor_tech]=='inf':
+                return Constraint.Skip
+            else:
+                return (sum(m.Storage_Capacity[stor_tech, zone] for zone in m.Zones) <= m.Total_storage_capacity[stor_tech])
+
+        self.m.Total_storage_capacity_constraint = Constraint(self.m.Stor_Techs, rule=Total_storage_capacity_rule)
+        
+        ### LINK FLOW CONSTRAINTS ###
+        print('Setting up flow constraints...')
+        # Pipeline flow (update this later to be part of the variable bound)
+
+        #TODO: have upper bound on pipeline size as an input
+
+        # Constrain pipeline sizes based on binary variables OR based on inputs from the previous iteration
+        if optimize_pipelines:
+            def pipeline_exists_rule(m, link):
+                bigM = self.bigM *self.h #kg/period, upper bound on pipeline capacity (~7000 TPD)
+                return m.Pipeline_Capacity[link] <= bigM*m.Pipeline_Exists[link]
             
-            # TODO: generalize into tank-based transmission
-            # TODO: think about if we want to incorporate capex/fixed opex or keep as levelized cost (via opex)
-            def forward_max_truck_rule(m, t, link):
-                return m.Truck_Flow[t,link] <= self.truck_size_limit*self.h #kg/period
+            self.m.pipeline_exists_constraint = Constraint(self.m.Links,rule=pipeline_exists_rule)
+        
+        else:
+            #not optimizing pipelines, limit sizes according to links
+
+            #TODO: think about how pipeline capacity limits (i.e., which pipelines exist) is passed in the second iteration
+
+            def pipeline_size_rule(m, link):
+                return m.Pipeline_Capacity[link] <= self.links.loc[link,'Capacity (kg/hr)']*self.h
             
-            self.m.forward_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=forward_max_truck_rule)
+            self.m.pipeline_size_constraint = Constraint(self.m.Links, rule=pipeline_size_rule)
 
-            def reverse_max_truck_rule(m, t, link):
-                return m.Truck_Flow[t,link] >= -self.truck_size_limit*self.h #kg/period
+        # Set total link flow for mass balance based on pipeline and truck flow
+        def total_link_flow_rule(m, t, link):
+            return m.Link_Flow[t, link] == m.Pipeline_Flow[t, link] + m.Truck_Flow[t, link]
+
+        self.m.total_link_flow_constraint = Constraint(self.m.T, self.m.Links, rule=total_link_flow_rule)
+        
+        # TODO: generalize into tank-based transmission
+        # TODO: think about if we want to incorporate capex/fixed opex or keep as levelized cost (via opex)
+
+        # Limit truck flows according to size limit
+        def forward_max_truck_rule(m, t, link):
+            return m.Truck_Flow[t,link] <= self.truck_size_limit*self.h #kg/period
+        
+        self.m.forward_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=forward_max_truck_rule)
+
+        def reverse_max_truck_rule(m, t, link):
+            return m.Truck_Flow[t,link] >= -self.truck_size_limit*self.h #kg/period
+        
+        self.m.reverse_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=reverse_max_truck_rule)
+
+        # Limit pipeline flows according to pipeline capacities
+        def pipeline_forward_flow_rule(m, t, link):
+            return m.Pipeline_Flow[t, link] <= m.Pipeline_Capacity[link]
             
-            self.m.reverse_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=reverse_max_truck_rule)
+        self.m.pipeline_forward_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_forward_flow_rule)
 
-            def pipeline_forward_flow_rule(m, t, link):
-                return m.Pipeline_Flow[t, link] <= m.Pipeline_Capacity[link]
-                
-            self.m.pipeline_forward_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_forward_flow_rule)
+        def pipeline_reverse_flow_rule(m, t, link):
+            return m.Pipeline_Flow[t, link] >= -1*m.Pipeline_Capacity[link]
 
-            def pipeline_reverse_flow_rule(m, t, link):
-                return m.Pipeline_Flow[t, link] >= -1*m.Pipeline_Capacity[link]
+        self.m.pipeline_reverse_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_reverse_flow_rule)
 
-            self.m.pipeline_reverse_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_reverse_flow_rule)
+        ### PRODUCTION CONSTRAINTS ###
+        print('Setting up electricity and hydrogen production constraints...')
+        
+        # Define the electricity production potential at each node in kwh
+        def Electricity_Potential_rule(m, tech, t, zone):
+            return m.Electricity_Potential[tech, t, zone] == sum(self.all_renewable_profiles.loc[self.t_dict[t],(tech,zone,producer)] * m.Gen_Capacity[tech,zone,producer]  for producer in get_producers(self.capacities,zone=zone,tech = tech).index )
 
-            print('Setting up renewable zone constraints...')
-            # Renewable production - this defines the renewable production at each node  in kwh
-            def Renewable_Production_rule(m, tech, t, zone):
-                return m.Electricity_Potential[tech, t, zone] == sum(self.all_renewable_profiles.loc[self.t_dict[t],(tech,zone,producer)] * m.Renewable_Capacity[tech,zone,producer]  for producer in get_producers(self.capacities,zone=zone,tech = tech).index )
+        self.m.Electricity_Potential_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Electricity_Potential_rule)
 
-            self.m.Electricity_Potential_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Renewable_Production_rule)
+        # Constrain the capacity of electricity generators
+        def Gen_build_limit_rule(m, tech, zone, producer):
+            capacity = get_producers(self.capacities,zone=zone,tech=tech)
+            if producer in capacity.index:
+                if not capacity.loc[producer]==capacity.loc[producer]:
 
-            # Renewable build limit  - sets the capacity of each REZ to be less than a value 
-            def Renewable_build_limit_rule(m, tech, zone, producer):
-                capacity = get_producers(self.capacities,zone=zone,tech=tech)
-                if producer in capacity.index:
-                    if not capacity.loc[producer]==capacity.loc[producer]:
+                    capacity.loc[producer] = 0
+                return  (m.Gen_Capacity[tech,zone,producer] <= capacity.loc[producer] * 1000) #TODO: specify units in inputs to avoid this 1000
+            else:
+                return Constraint.Skip
 
-                        capacity.loc[producer] = 0
-                    return  (m.Renewable_Capacity[tech,zone,producer] <= capacity.loc[producer] * 1000) #TODO: specify units in inputs to avoid this 1000
-                else:
-                    return Constraint.Skip
+        self.m.Renewable_build_limit_constraint = Constraint(self.m.Gen_Techs, self.m.Zones, self.m.Gen_Tranches, rule=Gen_build_limit_rule)
 
-            self.m.Renewable_build_limit_constraint = Constraint(self.m.Techs, self.m.Zones, self.m.Renewable_producers, rule=Renewable_build_limit_rule)
+        # TODO: recast curtailment and electrolyzer capacity based on generalized electricity/production flows
+        # Constrain curtailed electricty to less than production
+        def Curtailed_electricity_limit_rule(m, tech, t, zone):
+            return m.Electricity_Curtailed[tech, t, zone] <= m.Electricity_Potential[tech, t, zone]
+        
+        self.m.Curtailed_electricity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Curtailed_electricity_limit_rule) #can't curtailed more electricity than is produced
 
-            # TODO: recast curtailment and electrolyzer capacity based on generalized electricity/production flows
-            def Curtailed_electricity_limit_rule(m, tech, t, zone):
-                return m.Electricity_Curtailed[tech, t, zone] <= m.Electricity_Potential[tech, t, zone]
-            
-            self.m.Curtailed_electricity_limit_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Curtailed_electricity_limit_rule) #can't curtailed more electricity than is produced
+        # Set amount of electricity used based on curtailed electricity
+        def Electricity_Used_rule(m, tech, t, zone):
+            return (m.Electricity_Used[tech, t, zone] == m.Electricity_Potential[tech, t, zone] - m.Electricity_Curtailed[tech, t, zone])
 
-            def Electricity_Used_rule(m, tech, t, zone):
-                return (m.Electricity_Used[tech, t, zone] == m.Electricity_Potential[tech, t, zone] - m.Electricity_Curtailed[tech, t, zone])
+        self.m.Electricity_Used_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Electricity_Used_rule)
 
-            self.m.Electricity_Used_constraint = Constraint(self.m.Techs, self.m.T, self.m.Zones, rule=Electricity_Used_rule)
+        # Constrain electricity used based on electrolyzer capacity
+        def Electrolyser_Capacity_Limit_rule(m, t, zone):
+            return (sum(m.Electricity_Used[tech, t, zone] for tech in m.Gen_Techs)) <= m.Electrolyser_Capacity[zone]*self.h
 
-            # cap renewable production at node to electrolyser capacity
-            #TODO: rename this for clarity (could recast for easier understanding but probably not necessary)
-            def electrolyser_capacity_limit_rule(m, t, zone):
-                return (sum(m.Electricity_Used[tech, t, zone] for tech in m.Techs)) <= m.Electrolyser_Capacity[zone]*self.h
+        self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Zones, rule=Electrolyser_Capacity_Limit_rule)
 
-            self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Zones, rule=electrolyser_capacity_limit_rule)
+        # New H2 production build at nodes
+        # electricity is in kWh
+        # TODO: generalize to various H2 production pathways (focused on electrolysis)
+            # TODO: will need to think about how renewable production matches up with H2 production
+            # TODO: create variables for specification of electricity flows from each RE tech to each H2 production tech
+        
+        # Set H2 production
+        def H2_Production_rule(m, t, zone):
+            return m.H2_Production[t, zone] == (sum(m.Electricity_Used[tech, t, zone] for tech in m.Gen_Techs))/m.H2_conversion_efficiency
 
-            # New H2 production build at nodes
-            # electricity is in kWh
-            # TODO: generalize to various H2 production pathways (focused on electrolysis)
-                # TODO: will need to think about how renewable production matches up with H2 production
-                # TODO: create variables for specification of electricity flows from each RE tech to each H2 production tech
-            def H2_Production_rule(m, t, zone):
-                return m.H2_Production[t, zone] == (sum(m.Electricity_Used[tech, t, zone] for tech in m.Techs))/m.h2_conversion_efficiency
+        self.m.H2_Production_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Production_rule)
 
-            self.m.H2_Production_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Production_rule)
+        ### POWER BALANCE ###
+        print('Setting up power balance constraints...')
 
-            print('Setting up power balance constraints...')
-            # H2 balance considering link flows
-            def H2_Balance_rule(m, t, zone):
-                links_to_this_zone=self.links_to_zones[zone]
-                return (m.H2_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
-                        sum(m.Storage_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, zone] + m.H2_Overserved[t, zone] )
+        # Set the hydrogen balance
+        def H2_Balance_rule(m, t, zone):
+            links_to_this_zone=self.links_to_zones[zone]
+            return (m.H2_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
+                    sum(m.Storage_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, zone] + m.H2_Overserved[t, zone] )
 
-            self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Balance_rule)
+        self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Balance_rule)
 
-            print('Setting up transmission cost constraints...')
-            #TODO: work out in inputs somewhere how to add multipliers for links or set link costs in some specific way (or disallow links)
-            def Forward_Pipeline_OPEX_rule(m, t, link):
-                return (m.Pipeline_OPEX[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
+        ### TRANSMISSION AND STORAGE COSTS ###
 
-            self.m.Forward_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Pipeline_OPEX_rule)
+        print('Setting up transmission cost constraints...')
+        #TODO: work out in inputs somewhere how to add multipliers for links or set link costs in some specific way (or disallow links)
+        
+        # Set and truck costs
+        def Forward_Pipeline_OPEX_rule(m, t, link):
+            return (m.Pipeline_OPEX[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
 
-            def Reverse_Pipeline_OPEX_rule(m, t, link):
-                return (m.Pipeline_OPEX[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
+        self.m.Forward_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Pipeline_OPEX_rule)
 
-            self.m.Reverse_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_OPEX_rule)
+        def Reverse_Pipeline_OPEX_rule(m, t, link):
+            return (m.Pipeline_OPEX[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Transmission Opex ($/kg)'])
 
-            def Forward_Truck_Cost_rule(m, t, link): #TODO: generalize to all tank transport
-                return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.truck_cost*(self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]/100))
-            
-            self.m.Forward_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Truck_Cost_rule)
+        self.m.Reverse_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_OPEX_rule)
 
-            def Reverse_Truck_Cost_rule(m, t, link):
-                return (m.Truck_Cost[t,link] >= -m.Truck_Flow[t,link]*self.truck_cost*(self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]/100))
-            
-            self.m.Reverse_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Truck_Cost_rule)
+        def Forward_Truck_Cost_rule(m, t, link): #TODO: generalize to all tank transport
+            return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.truck_cost*(self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]/100))
+        
+        self.m.Forward_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Truck_Cost_rule)
 
-            print('Setting up storage cost constraints...')
-            # TODO: allow for variable opex on discharge if desired by user
+        def Reverse_Truck_Cost_rule(m, t, link):
+            return (m.Truck_Cost[t,link] >= -m.Truck_Flow[t,link]*self.truck_cost*(self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]/100))
+        
+        self.m.Reverse_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Truck_Cost_rule)
 
-            def Storage_Charge_OPEX_rule(m, stor_tech, t, zone):
-                return (m.Storage_Charge_OPEX[stor_tech,t,zone] >= m.Storage_Charge[stor_tech,t,zone]*m.Storage_charge_cost[stor_tech])
+        print('Setting up storage cost constraints...')
+        # TODO: allow for variable opex on discharge if desired by user
 
-            self.m.Storage_Charge_OPEX_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_Charge_OPEX_rule)
+        #Set storage charge costs
+        def Storage_Charge_OPEX_rule(m, stor_tech, t, zone):
+            return (m.Storage_Charge_OPEX[stor_tech,t,zone] >= m.Storage_Charge[stor_tech,t,zone]*m.Storage_charge_cost[stor_tech])
+
+        self.m.Storage_Charge_OPEX_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_Charge_OPEX_rule)
 
 
-            print('Setting up objective function...')
-            #### Objective function
+        print('Setting up objective function...')
+        #### Objective function
 
-            def get_CRF(interest=self.interest, years=self.payback_years):
-                return (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
-            '''
-            def objective_rule(m):
-                return (sum(
-                        sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}_Storage'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #cost of storage build
-                        m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM_Electrolyser',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
-                        sum(m.H2_Unserved[t, zone] * m.Cost_of_Unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
-                        sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
-                        sum(sum(m.Pipeline_OPEX[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
-                        sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
-                        #TODO: consider variable opex for generation techs (e.g., to use LCOE)
-                        #TODO: consider variable opex for hydrogen production techs
-                        #TODO: consider CAPEX for tank-based based
-                        #TODO: convert pipeline costs into inputs
-                        sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
-                        sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
-                        sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
+        def get_CRF(interest=self.interest, years=self.payback_years):
+            return (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
 
-                        #electricity opex
-                        sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
-                        # could loop through just grid connected zones or something like that
+        
+        def objective_rule(m):
+            return (sum(
+                    sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #cost of storage build
+                    m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM Electrolyzer',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
+                    sum(m.H2_Unserved[t, zone] * m.Cost_of_unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
+                    sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
+                    sum(sum(m.Pipeline_OPEX[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
+                    sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
+                    #TODO: consider variable opex for generation techs (e.g., to use LCOE)
+                    #TODO: consider variable opex for hydrogen production techs
+                    #TODO: consider CAPEX for tank-based based
+                    #TODO: convert pipeline costs into inputs
+                    sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
+                    sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
+                    sum(sum(sum(m.Gen_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Gen_Techs) for zone in m.Zones) for producer in m.Gen_Tranches)  + # renewable build
 
-                        #TODO: handle PTC/ITC in inputs
-                        -sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
-                        -sum(sum(sum((m.Electricity_Potential[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) #ITC effects
-                )
-                        
-                #log_infeasible_constraints(m)
-            '''
-            
-            def objective_rule(m):
-                return (sum(
-                        sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #cost of storage build
-                        m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM Electrolyzer',zone] + #cost of electrolyser TODO: think about how to reference costs with inputs, generalize for H2 production
-                        sum(m.H2_Unserved[t, zone] * m.Cost_of_Unserved_H2 for t in m.T) + #penilty for unserved H2 TODO: think about inputs for overserved/underserved penalties
-                        sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) for zone in m.Zones) + #penilty for overserved H2
-                        sum(sum(m.Pipeline_OPEX[t,link] for t in m.T) for link in m.Links) + #opex for pipelines
-                        sum(sum(m.Truck_Cost[t,link] for t in m.T) for link in m.Links) + #levelized cost for trucks
-                        #TODO: consider variable opex for generation techs (e.g., to use LCOE)
-                        #TODO: consider variable opex for hydrogen production techs
-                        #TODO: consider CAPEX for tank-based based
-                        #TODO: convert pipeline costs into inputs
-                        sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
-                        sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
-                        sum(sum(sum(m.Renewable_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Techs) for zone in m.Zones) for producer in m.Renewable_producers)  + # renewable build
+                    #electricity opex
+                    sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Gen_Techs) for zone in m.Zones) +
+                    # could loop through just grid connected zones or something like that
 
-                        #electricity opex
-                        sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Techs) for zone in m.Zones) +
-                        # could loop through just grid connected zones or something like that
-
-                        #TODO: handle PTC/ITC in inputs
-                        -sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) + #PTC effects
-                        -sum(sum(sum((m.Electricity_Potential[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Techs) #ITC effects
-                )
-                        
-                #log_infeasible_constraints(m)
-            self.m.objective = Objective(rule=objective_rule, sense=minimize)
+                    #TODO: handle PTC/ITC in inputs
+                    -sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.PTC[tech] for zone in m.Zones) for t in m.T) for tech in m.Gen_Techs) + #PTC effects
+                    -sum(sum(sum((m.Electricity_Potential[tech,t,zone])*self.ITC[tech] for zone in m.Zones) for t in m.T) for tech in m.Gen_Techs) #ITC effects
+            )
+                    
+            #log_infeasible_constraints(m)
+        self.m.objective = Objective(rule=objective_rule, sense=minimize)
             
     def solve_model(self,optimize_pipelines=False):
         stream_solver=True
@@ -597,7 +594,7 @@ class HYPSTAT:
       
         
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
-        Renewable_Capacity = pd.Series(self.m.Renewable_Capacity.extract_values(), index=self.m.Renewable_Capacity.extract_values().keys()).unstack()
+        Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Zone_Capacities=Renewable_Capacity.sum(1).unstack()
         Electrolyser_Capacity = pd.Series(self.m.Electrolyser_Capacity.extract_values(), index=self.m.Electrolyser_Capacity.extract_values().keys())
         Zone_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity
@@ -631,7 +628,7 @@ class HYPSTAT:
         Renewable_Production.to_csv(results_dir+'/Renewable_Production.csv')
         Renewable_Production_Tech.to_csv(results_dir+'/Renewable_Production_Tech_Total.csv')
 
-        Renewable_Capacity = pd.Series(self.m.Renewable_Capacity.extract_values(), index=self.m.Renewable_Capacity.extract_values().keys()).unstack()
+        Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity.to_csv(results_dir+'/Renewable_Capacity.csv')
 
         Storage_Charge = pd.Series(self.m.Storage_Charge.extract_values(), index=self.m.Storage_Charge.extract_values().keys()).unstack()
@@ -684,7 +681,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('Test Cases/test_case_inputs_merged')
+test.write_outputs('Test Cases/test_case_cleaned_up')
 print('Done!')
 
 '''
@@ -715,5 +712,6 @@ Test cases:
         test_case_recast_elec_prod: same as test_case_grid3, but with electricity recast to include a specific variable for amount of used electricity (more intuitive)
         test_case_recast_elec_prod2: same as test_case_grid but with electricity recast as above (but should build no grid electricity)
         test_case_inputs: Yijin made test case with new inputs generalized and replaced
-        test_case_inputs_merged: testing that new input format merged with Joe's edits still works (NOTE: THIS HAS NOT BEEN RUN YET)
+        test_case_inputs_merged: testing that new input format merged with Joe's edits still works
+        test_case_cleaned_up: Joe's test case after renaming and reorganizing some code for clean up
         '''
