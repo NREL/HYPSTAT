@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 import yaml
 from pathlib import Path  # Import Path to handle file paths
+import copy
 
 
 from pyomo.environ import *
