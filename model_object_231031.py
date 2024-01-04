@@ -44,6 +44,7 @@ class HYPSTAT:
 
         self.max_imports_ratio = yaml_data.get('max_imports_ratio', None)
         self.import_zones = yaml_data.get('import_zones', None)
+        self.export_zones = {} #TODO: adjust inputs to work like import zones
         print(self.import_zones)
         self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None)
 
