@@ -14,12 +14,12 @@ truck_size_limit  : 4166 #kg/hr, 100 trucks/day * 1000kg/truck /24 hr/day
 hydrogen_overserved_cost  : 5 #$/kg
 
 Cost_of_Unserved_H2 : 1000 #$/kg
-Storage_charge_limit : 0.03 # 3% per day
-Storage_discharge_limit : 0.1 # 10% per day
 Storage_charge_cost :  0.06 #$/kg
 bigM : 300000 #kg/period, upper bound on pipeline capacity (~7000 TPD)
-#Total_storage_capacity_Tank : 'inf'
-#Total_storage_capacity_Cavern : 'inf'
+pipeline_cost_alpha : 18.86
+pipeline_cost_beta : 2122612
+
+
 
 #Time controls (use for intrayear analysis)
 start : '1 Jan ' #start date for intrayear analysis 

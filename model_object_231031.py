@@ -105,21 +105,20 @@ class HYPSTAT:
         self.storage_capacities = {index: row.to_dict() for index, row in self.storage_capacities.iterrows()}
 
         self.H2_Storage_Limit = pd.read_csv(self.StorageLimitsFiles_paths[0])
-        self.H2_Storage_Limit['capacity'] = self.H2_Storage_Limit['capacity'].astype(str)
-        self.Total_storage_capacity = dict(zip(self.H2_Storage_Limit['Storage Tech'], self.H2_Storage_Limit['capacity'].str.strip("'").replace('inf', 'inf')))
+        self.H2_Storage_Limit['capacity'] = self.H2_Storage_Limit['capacity'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))
+        self.Total_storage_capacity = dict(zip(self.H2_Storage_Limit['Storage Tech'], self.H2_Storage_Limit['capacity']))
 
-        print(self.Total_storage_capacity)
         self.max_imports = self.demand.sum().sum() * self.max_imports_ratio
         self.Cost_of_Unserved_H2 = yaml_data.get('Cost_of_Unserved_H2', None)
-        #self.Storage_charge_limit =yaml_data.get('Storage_charge_limit', None)
-        self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit']))
-        #self.Storage_discharge_limit =yaml_data.get('Storage_discharge_limit', None)
-        self.Storage_discharge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['discharge limit']))
-        #self.Storage_charge_cost =yaml_data.get('Storage_charge_cost', None)
+        self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
+        print(self.Storage_charge_limit)
+        self.Storage_discharge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['discharge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
         self.Storage_charge_cost = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge_cost ($/kg)']))
-        
+        self.storage_limits = yaml_data.get('storage_limits', None)
+
         self.bigM = yaml_data.get('bigM',None)
-        print(self.bigM)
+        self.pipeline_cost_alpha = yaml_data.get('pipeline_cost_alpha',None)
+        self.pipeline_cost_beta = yaml_data.get('pipeline_cost_beta',None)
 
         self.all_renewable_profiles = self.all_renewable_profiles.loc[self.start + str(self.year): self.end + str(self.year)]
         self.year_ratio = len(self.all_renewable_profiles.resample('d').first()) / 365
@@ -184,8 +183,16 @@ class HYPSTAT:
         ### PARAMETERS ###
         self.m.Cost_of_unserved_H2 = Param(initialize=self.Cost_of_Unserved_H2) # We assume that a kg of unserved hydrogen has an economic cost of 10eX.
         self.m.H2_conversion_efficiency = Param(initialize=self.h2_conversion_efficiency) # kW/kg.h2
-        self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
-        self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
+        self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
+        self.Storage_discharge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['discharge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
+        self.storage_charge_limit_values = {tech: 'inf' if isinstance(value, str) else value * self.h for tech, value in self.Storage_charge_limit.items()}
+        self.storage_discharge_limit_values = {tech: 'inf' if isinstance(value, str) else value * self.h for tech, value in self.Storage_discharge_limit.items()}
+
+        # Use the dictionaries to initialize the parameters
+        self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=self.storage_charge_limit_values)
+        self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize=self.storage_discharge_limit_values)
+        #self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.03/24)*self.h,'Tank':'inf'})
+        #self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize={'Cavern':(0.1/24)*self.h,'Tank':'inf'})
         self.m.Storage_charge_cost = Param(self.m.Stor_Techs,initialize={str(st): self.Storage_charge_cost[st] for st in self.m.Stor_Techs})
         self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize={str(st): self.Total_storage_capacity[st] for st in self.m.Stor_Techs})
 
@@ -506,7 +513,7 @@ class HYPSTAT:
                     #TODO: consider variable opex for hydrogen production techs
                     #TODO: consider CAPEX for tank-based based
                     #TODO: convert pipeline costs into inputs
-                    sum((((m.Pipeline_Capacity[link]/self.h)*18.86 + 2122612*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
+                    sum((((m.Pipeline_Capacity[link]/self.h)*self.pipeline_cost_alpha + self.pipeline_cost_beta*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
                     sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
                     sum(sum(sum(m.Gen_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Gen_Techs) for zone in m.Zones) for producer in m.Gen_Tranches)  + # renewable build
 
@@ -682,7 +689,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('Test Cases/test_case_cleaned_up')
+test.write_outputs('Test Cases/test_case_inputs_2')
 print('Done!')
 
 '''
@@ -715,4 +722,6 @@ Test cases:
         test_case_inputs: Yijin made test case with new inputs generalized and replaced
         test_case_inputs_merged: testing that new input format merged with Joe's edits still works
         test_case_cleaned_up: Joe's test case after renaming and reorganizing some code for clean up
+        test_case_inputs_2 : Yijin modifications on inputs for generalization
+
         '''

@@ -124,7 +124,9 @@ def get_build_cost_matrix(interest,payback_years, payback_years_tank,payback_yea
     for tech in RE_technology_build.index.get_level_values(1).unique():
         for zone in all_zones:
             for (year,tech) in RE_technology_build.index:
-                build_cost.loc[tech,zone]=get_annuity((RE_technology_build.loc[(year,tech),'CAPEX($/kW)']+RE_technology_build.loc[(year,tech),'InterconnectionCost($/kW)']), interest, payback_years) + RE_technology_build.loc[(year,tech),'Fix OPEX($/kW-yr)']
+                #build_cost.loc[tech,zone]=get_annuity((RE_technology_build.loc[(year,tech),'CAPEX($/kW)']+RE_technology_build.loc[(year,tech),'InterconnectionCost($/kW)']), interest, payback_years) + RE_technology_build.loc[(year,tech),'Fix OPEX($/kW-yr)']
+                build_cost.loc[tech,zone]=get_annuity((RE_technology_build.loc[(year,tech),'CAPEX($/kW)']), interest, payback_years) + RE_technology_build.loc[(year,tech),'Fix OPEX($/kW-yr)']
+            
             for (year,tech) in H2_technology_build.index:
                 build_cost.loc[tech,zone]=get_annuity(H2_technology_build.loc[(year,tech),'CAPEX($/kW)'], interest, payback_years_electrolyzer) + H2_technology_build.loc[(year,tech),'OPEX($/kW-yr)']
             for (year,tech) in H2_storage_build.index:
