@@ -86,6 +86,7 @@ class HYPSTAT:
         print(self.truck_cost)
 
         ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
+        #TODO: update this so that it also has an index for time, and make sure indexing matches in objective function
         self.re_opex = pd.DataFrame(data=0,index=self.techs,columns=self.all_zones)
         self.re_opex.loc['Grid'] = 0.2 #$/kWh (LCOE)
 
@@ -109,6 +110,7 @@ class HYPSTAT:
         self.Total_storage_capacity = dict(zip(self.H2_Storage_Limit['Storage Tech'], self.H2_Storage_Limit['capacity']))
 
         self.max_imports = self.demand.sum().sum() * self.max_imports_ratio
+        self.min_exports = 0 #NOTE: should eventually incorporate this into inputs
         self.Cost_of_Unserved_H2 = yaml_data.get('Cost_of_Unserved_H2', None)
         self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
         print(self.Storage_charge_limit)
@@ -221,6 +223,7 @@ class HYPSTAT:
         self.m.H2_Unserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )   #kg/per interval
         self.m.H2_Overserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)#,bounds=(0,0) )  
         self.m.H2_Imports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) # imported hydrogen, kg/interval
+        self.m.H2_Exports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #exported hydrogen, kg/interval
 
         # Storage
         self.m.Storage_Charge = Var(self.m.Stor_Techs,self.m.T,self.m.Zones)
@@ -242,8 +245,8 @@ class HYPSTAT:
 
         self.m.link_flow_direction = Param(self.m.Links, self.m.Zones, initialize=link_rule)
 
-        ### DEMAND AND IMPORT CONSTRAINTS ###
-        print('Setting up demand and import constraints...')
+        ### DEMAND CONSTRAINTS ###
+        print('Setting up demand constraints...')
 
         # Option 1: Meet demand over course of day
         def demand_rule(m, t, zone):
@@ -258,6 +261,9 @@ class HYPSTAT:
 
         #self.m.demand_constraint = Constraint(m.T, m.Zones, rule=demand_rule)
         self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=demand_rule_2)
+
+        ### IMPORT CONSTRAINTS ###
+        print('Setting up import constraints...')
 
         # Limit quantity of total imports
         def total_imports_rule(m):
@@ -274,7 +280,24 @@ class HYPSTAT:
         
         self.m.zone_imports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_imports_rule)
 
-        #TODO: think about exports
+        ### EXPORT CONSTRAINTS ###
+        print('Setting up export constraints...')
+
+        # Ensure that model meets a minimum quota of exports
+        def total_exports_rule(m):
+            return (sum(sum(m.H2_Exports[t,zone] for t in m.T) for zone in m.Zones)) >= self.min_exports
+
+        self.m.total_exports_constraint = Constraint(rule=total_exports_rule)
+        # TODO: potentially incorporate specific export quotas for each zone
+
+        # Restrict which zones are allowed to export
+        def zone_exports_rule(m, t, zone):
+            if zone in self.export_zones:
+                return Constraint.Skip
+            else:
+                return m.H2_Exports[t,zone] == 0
+        
+        self.m.zone_exports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_exports_rule)
 
         ### STORAGE CONSTRAINTS ###
         print('Setting up storage constraints...')
@@ -454,7 +477,7 @@ class HYPSTAT:
         def H2_Balance_rule(m, t, zone):
             links_to_this_zone=self.links_to_zones[zone]
             return (m.H2_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
-                    sum(m.Storage_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, zone] + m.H2_Overserved[t, zone] )
+                    sum(m.Storage_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, zone] + m.H2_Overserved[t, zone] + m.H2_Exports[t, zone])
 
         self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Balance_rule)
 
@@ -518,7 +541,7 @@ class HYPSTAT:
                     sum(sum(sum(m.Gen_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Gen_Techs) for zone in m.Zones) for producer in m.Gen_Tranches)  + # renewable build
 
                     #electricity opex
-                    sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone] for t in m.T) for tech in m.Gen_Techs) for zone in m.Zones) +
+                    sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone,t] for t in m.T) for tech in m.Gen_Techs) for zone in m.Zones) +
                     # could loop through just grid connected zones or something like that
 
                     #TODO: handle PTC/ITC in inputs
