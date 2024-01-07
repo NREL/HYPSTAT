@@ -5,9 +5,11 @@ lastYear          : 2050  # Units: yr
 timeWindow        : 10  # Units: yr
 senario           : 'Best_Guess'  # Scenario for the run
 
-#Import
+#Import and export
 max_imports_ratio : 0.25 # 25% of the total hydrogen system demand
 import_zones  : ['F'] #zones which can import hydrogen
+min_exports_ratio : 0 # could be ratio or amount
+export_zones  : [ ] #zones which can import hydrogen
 
 #Model constrain:
 truck_size_limit  : 4166 #kg/hr, 100 trucks/day * 1000kg/truck /24 hr/day
@@ -40,6 +42,9 @@ demandFile:
 
 REcostFile:
   - "Inputs/technology_financials/renewable-build-cost.csv"
+
+REopexFile:
+  - "Inputs/technology_financials/LT00_2022_PLEXOSprices.csv"
 
 ProductioncostFile:
   - "Inputs/technology_financials/hydrogen-production-cost.csv"

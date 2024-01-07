@@ -31,6 +31,7 @@ class HYPSTAT:
             yaml_data = yaml.safe_load(yaml_file)
         
         self.year = yaml_data.get('studiedyear',None)
+        self.time_periods = pd.date_range(str(self.year)+'-01-01 00:00:00', periods=8760, freq="H") 
         self.firstYear = yaml_data.get('firstYear', None)
         self.lastYear = yaml_data.get('lastYear', None)
         self.timeWindow = yaml_data.get('timeWindow', None)
@@ -43,9 +44,9 @@ class HYPSTAT:
         self.payback_years_electrolyzer = yaml_data.get('payback_years_electrolyzer', None)
 
         self.max_imports_ratio = yaml_data.get('max_imports_ratio', None)
+        self.min_exports_ratio = yaml_data.get('min_exports_ratio', None)
         self.import_zones = yaml_data.get('import_zones', None)
-        self.export_zones = {} #TODO: adjust inputs to work like import zones
-        print(self.import_zones)
+        self.export_zones = yaml_data.get('export_zones', None)
         self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None)
 
         self.start = yaml_data.get('start', None)
@@ -53,6 +54,9 @@ class HYPSTAT:
 
         self.demandFiles_paths = yaml_data.get('demandFile', [])
         self.REcostFiles_paths = yaml_data.get('REcostFile', [])
+        #hourly electricty profile
+        self.REopexFiles_paths = yaml_data.get('REopexFile', [])
+        
         self.ProductioncostFiles_paths = yaml_data.get('ProductioncostFile', [])
         self.H2DeliveryFile_paths = yaml_data.get('H2DeliveryFile', [])
         self.H2StorageFile_paths = yaml_data.get('H2StorageFile', [])
@@ -63,6 +67,8 @@ class HYPSTAT:
         self.StorageLimitsFiles_paths = yaml_data.get('StorageLimitsFiles', [])
 
         self.REcostFiles = pd.concat([pd.read_csv(path) for path in self.REcostFiles_paths], ignore_index=True)
+        self.REopexFiles = pd.concat([pd.read_csv(path) for path in self.REopexFiles_paths], ignore_index=True )
+        self.REopexFiles.index = self.time_periods
         self.year_tech_dict = self.create_year_tech_dict(self.REcostFiles)
         self.techs = self.year_tech_dict[self.year]
 
@@ -84,12 +90,18 @@ class HYPSTAT:
         self.truck_cost = self.cost_dict['Truck']
         link_distance_path = 'Inputs/networks/link_distances.csv' #TODO: maybe incorporate into get_links function above?
         self.link_distances = pd.read_csv(link_distance_path,index_col='Zone')
-        print(self.truck_cost)
+        #print(self.truck_cost)
 
         ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
         #TODO: update this so that it also has an index for time, and make sure indexing matches in objective function
-        self.re_opex = pd.DataFrame(data=0,index=self.techs,columns=self.all_zones)
-        self.re_opex.loc['Grid'] = 0.2 #$/kWh (LCOE)
+        
+        ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
+        #self.re_opex = pd.DataFrame(data=0,index=self.techs,columns=self.all_zones)        
+        multi_index = pd.MultiIndex.from_product([self.all_zones,self.techs])
+        self.re_opex = pd.DataFrame(data=0, index=self.time_periods, columns=multi_index)
+        self.re_opex.loc[(slice(None), "Grid")] = self.REopexFiles['Price ($/MWh)'] /1000 # $/kWh (LCOE) 0.2 value for testing
+        #print(self.REopexFiles['Price ($/MWh)'] )
+        #print((self.re_opex.loc[(slice(None), "Grid")]))
 
         self.build_cost = get_build_cost_matrix(self.interest,self.payback_years, self.payback_years_tank,self.payback_years_electrolyzer, self.REcostFiles_paths,self.ProductioncostFiles_paths,self.H2StorageFile_paths,self.year,self.all_zones)
 
@@ -111,10 +123,10 @@ class HYPSTAT:
         self.Total_storage_capacity = dict(zip(self.H2_Storage_Limit['Storage Tech'], self.H2_Storage_Limit['capacity']))
 
         self.max_imports = self.demand.sum().sum() * self.max_imports_ratio
-        self.min_exports = 0 #NOTE: should eventually incorporate this into inputs
+        self.min_exports = self.demand.sum().sum() * self.min_exports_ratio #NOTE: ratio or amount could be changed
         self.Cost_of_Unserved_H2 = yaml_data.get('Cost_of_Unserved_H2', None)
         self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
-        print(self.Storage_charge_limit)
+        #print(self.Storage_charge_limit)
         self.Storage_discharge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['discharge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
         self.Storage_charge_cost = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge_cost ($/kg)']))
         self.storage_limits = yaml_data.get('storage_limits', None)
@@ -517,6 +529,9 @@ class HYPSTAT:
 
         self.m.Storage_Charge_OPEX_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_Charge_OPEX_rule)
 
+        #print(self.re_opex.index)
+        #print(self.re_opex.columns)
+        print(self.m.T)
 
         print('Setting up objective function...')
         #### Objective function
@@ -537,12 +552,13 @@ class HYPSTAT:
                     #TODO: consider variable opex for hydrogen production techs
                     #TODO: consider CAPEX for tank-based based
                     #TODO: convert pipeline costs into inputs
+                    #TODO: consider import and export cost and rewards
                     sum((((m.Pipeline_Capacity[link]/self.h)*self.pipeline_cost_alpha + self.pipeline_cost_beta*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]) for link in m.Links)*get_CRF() + #TODO: take CRF out of this and make sure it is inputs, like for all other techs
                     sum(sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for zone in m.Zones) for stor_tech in m.Stor_Techs) +
                     sum(sum(sum(m.Gen_Capacity[tech,zone,producer] * self.build_cost.loc[tech,zone] for tech in m.Gen_Techs) for zone in m.Zones) for producer in m.Gen_Tranches)  + # renewable build
 
                     #electricity opex
-                    sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[tech,zone,t] for t in m.T) for tech in m.Gen_Techs) for zone in m.Zones) +
+                    sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.re_opex.loc[self.t_dict[t],(zone,tech)] for t in m.T) for tech in m.Gen_Techs) for zone in m.Zones) +
                     # could loop through just grid connected zones or something like that
 
                     #TODO: handle PTC/ITC in inputs
@@ -713,7 +729,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve()
-test.write_outputs('Test Cases/test_case_inputs_2')
+test.write_outputs('Test Cases/test_case_inputs_export_reopex')
 print('Done!')
 
 '''
@@ -747,5 +763,5 @@ Test cases:
         test_case_inputs_merged: testing that new input format merged with Joe's edits still works
         test_case_cleaned_up: Joe's test case after renaming and reorganizing some code for clean up
         test_case_inputs_2 : Yijin modifications on inputs for generalization
-
+        test_case_inputs_export_reopex : Added export zone and hourly electricity profile for RE_opex
         '''
