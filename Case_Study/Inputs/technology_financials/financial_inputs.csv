@@ -1,0 +1,11 @@
+Tech,Year,Recovery_time (years),Discount_Rate
+Solar,All years,25,0.1
+Onshore Wind,All years,25,0.1
+Offshore Wind,All years,20,0.1
+Nuclear,All years,40,0.1
+PEM Electrolyzer,All years,25,0.1
+Tank,All years,25,0.1
+Cavern,All years,40,0.1
+Pipelines,All years,40,0.1
+Compressors,All years,25,0.1
+Grid,All years,25,0.1

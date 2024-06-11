@@ -1,0 +1,63 @@
+#Analysis:
+studiedyear  :   2030 # Units: yr
+firstYear         : 2030  # Units: yr
+lastYear          : 2050  # Units: yr
+timeWindow        : 10  # Units: yr
+
+
+#Import and export:
+max_imports_ratio : 0 # 25% of the total hydrogen system demand
+import_zones  : [] #zones which can import hydrogen
+min_exports_ratio : 0 # could be ratio or amount
+export_zones  : [] #zones which can import hydrogen
+
+#Model constrains and costs:
+hydrogen_overserved_cost  : 5 #$/kg
+Cost_of_Unserved_H2 : 1000 #$/kg
+pipeline_cost_alpha : 7.717 
+pipeline_cost_beta : 1325659
+
+
+#Time controls (use for intrayear analysis)
+start : '1 Jan ' #start date for intrayear analysis 
+end : '31 Dec ' # end date for intrayear analysis
+coarse_resolution : 24 #resolution in hours to use for 1st step with pipeline location optimization (24 or higher recommended)
+fine_resolution : 2 #resolution in hours to use for 2nd step with specified pipeline locations (1-4 recommended)
+
+
+#FilePath:
+demandFile:
+  - "../Sample_Case/Inputs/demand/h2_demand.csv"
+
+FinancialFile:
+  - "../Sample_Case/Inputs/networks/Links.csv"
+
+REcostFile:
+  - "../Inputs/technology_financials/renewable-build-cost.csv"
+
+REopexFile:
+  - "../Inputs/technology_financials/LT00_2030_PLEXOSprices_240203.csv"
+
+ProductioncostFile:
+  - "../Inputs/technology_financials/hydrogen-production-cost.csv"
+
+H2DeliveryFile:
+  - "../Inputs/technology_financials/hydrogen-delivery-cost.csv"
+
+H2StorageFile:
+  - "../Inputs/technology_financials/hydrogen-storage-cost.csv"
+
+SupplycurveFolder:
+  - "../Inputs/supply_curves_baseline"
+
+NetworksFiles:
+  - "../Inputs/networks/2030_LT_links_20240118.csv"
+
+IncentiveFiles:
+  - "../Inputs/policy/renewable-incentives.csv"
+
+StorageCapacityFiles:
+  - "../Inputs/storage/storage_capacities.csv"
+
+StorageLimitsFiles:
+  - "../Inputs/storage/storage_constrain.csv"

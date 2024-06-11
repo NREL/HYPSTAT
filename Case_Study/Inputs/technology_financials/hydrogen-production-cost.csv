@@ -1,0 +1,4 @@
+Year,Tech,CAPEX($/kW),OPEX($/kW-yr),efficiency(kWh/kg),Variable OPEX (€/kg)
+2030,Alkaline Electrolyzer,931.3504582,11.73501577,49.01,0.065
+2040,Alkaline Electrolyzer,781.1326423,9.842271293,49.01,0.065
+2050,Alkaline Electrolyzer,630.9148265,7.949526814,49.01,0.065

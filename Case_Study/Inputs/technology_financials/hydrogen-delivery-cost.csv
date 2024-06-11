@@ -1,0 +1,7 @@
+Year,Tech,CAPEX ($/kg/100-mi),Fixed OPEX (%),Variable_OPEX ($/kg)
+2030,Pipeline,0,0.01,0.055
+2040,Pipeline,0,0.01,0.055
+2050,Pipeline,0,0.01,0.055
+2030,Truck,0,0,0.8
+2040,Truck,0,0,0.8
+2050,Truck,0,0,0.8
