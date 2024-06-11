@@ -78,6 +78,8 @@ class HYPSTAT:
 
         self.all_renewable_profiles, self.capacities = get_renewable_profiles(year=self.year,techs = self.techs,path=self.SupplycurveFolder_paths[0],drop_capacity_below=False)
         self.demand = get_demand(self.all_renewable_profiles,year=self.year, daily_demand=True,freq='h', file_path=self.demandFiles_paths[0])
+        
+        #TODO: add an input for all zones rather than inferring the list of zones from the link file
         self.link_flow_direction, self.links, self.all_zones, self.links_to_zones = get_links(self.Networks_paths[0])
 
         self.delivery_cost = pd.read_csv(self.H2DeliveryFile_paths[0])
