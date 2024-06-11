@@ -1,0 +1,4 @@
+Year,Tech,CAPEX($/kW),OPEX($/kW-yr),efficiency(kWh/kg)
+2030,PEM Electrolyzer,926,64.83,51
+2040,PEM Electrolyzer,736,53.563,51
+2050,PEM Electrolyzer,575,44.02,51
