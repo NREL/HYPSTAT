@@ -1,7 +1,7 @@
 Year,Tech,CAPEX ($/kg),OPEX ($/kg)
-2030,Tank,900,0
-2040,Tank,900,0
-2050,Tank,900,0
-2030,Cavern,35,0
-2040,Cavern,35,0
-2050,Cavern,35,0
+2030,Tank,900,0.06
+2040,Tank,900,0.06
+2050,Tank,900,0.06
+2030,Cavern,35,0.06
+2040,Cavern,35,0.06
+2050,Cavern,35,0.06
