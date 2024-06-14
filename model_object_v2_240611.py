@@ -41,7 +41,6 @@ class HYPSTAT:
         self.import_zones = yaml_data.get('import_zones', None)
         self.export_zones = yaml_data.get('export_zones', None)
         self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None) #[EUR/kg]
-        self.grid_adder = yaml_data.get('grid_adder', None) #[EUR/kWh]
         self.grid_prices_by_loc = yaml_data.get('grid_prices_by_loc', False) #if missing, defaults to national grid prices
         self.allow_negative_grid_prices = yaml_data.get('allow_negative_grid_prices', False) #if missing, defaults to False (not allowing negative prices)
 
@@ -77,7 +76,7 @@ class HYPSTAT:
         self.H2StorageFile = pd.concat([pd.read_csv(path) for path in self.H2StorageFile_paths], ignore_index=True)
         self.year_stor_tech_dict = self.create_year_tech_dict(self.H2StorageFile)
         self.stor_techs = self.year_stor_tech_dict[self.year]
-        self.Storage_charge_cost = dict(zip(self.H2StorageFile['Tech'],self.H2StorageFile['OPEX (€/kg)'])) #[EUR/kg]
+        self.Storage_charge_cost = dict(zip(self.H2StorageFile['Tech'],self.H2StorageFile['Charge cost ($/kg)']))
        
         print(self.Storage_charge_cost)
         
@@ -94,9 +93,11 @@ class HYPSTAT:
         
         self.delivery_cost = pd.read_csv(self.H2DeliveryFile_paths[0])
         self.delivery_cost = self.delivery_cost[self.delivery_cost['Year'] == self.year]
-        self.cost_dict = dict(zip(self.delivery_cost['Tech'], self.delivery_cost['Variable_OPEX ( €/kg)']))
+        print(self.delivery_cost)
+        self.cost_dict = dict(zip(self.delivery_cost['Tech'], self.delivery_cost['OPEX ($/kg)']))
         self.links['Pipeline Opex (€/kg)'] = self.cost_dict['Pipeline'] * \
-                                                  self.links['Pipeline distance [km]'] / 100
+                                                  self.links['Pipeline distance [mi]'] / 100
+        
        
         if self.Pipeline_opex_override_path is not None and self.Pipeline_opex_override_path.count(None) != len(self.Pipeline_opex_override_path):
             self.pipeline_opex_overrides = pd.concat([pd.read_csv(path) for path in self.Pipeline_opex_override_path], ignore_index=True)
@@ -122,9 +123,9 @@ class HYPSTAT:
 
         for z in self.re_opex.columns.get_level_values(0):
             if self.grid_prices_by_loc:
-                self.re_opex.loc[:,(z,"Grid")] = self.REopexFiles[z]/1000 + self.grid_adder # [€/kWh]
+                self.re_opex.loc[:,(z,"Grid")] = self.REopexFiles[z]/1000 # [$/kWh]
             else:
-                self.re_opex.loc[:,(z,"Grid")] = self.REopexFiles['Price ($/MWh)']/1000 + self.grid_adder # [€/kWh] (LCOE) 0.2 value for testing
+                self.re_opex.loc[:,(z,"Grid")] = self.REopexFiles['Price ($/MWh)']/1000 # [$/kWh] (LCOE) 0.2 value for testing
         
         if not self.allow_negative_grid_prices:
             self.re_opex.clip(lower=0,inplace=True)
@@ -136,14 +137,14 @@ class HYPSTAT:
         self.build_cost = get_build_cost_matrix(self.FinancialFiles_paths,self.REcostFiles_paths,self.ProductioncostFiles_paths,self.H2StorageFile_paths,self.year, self.all_zones) #[EUR/kW for generators and electrolyzers, EUR/kg wk cap for storage]
         self.H2_prod_cost = pd.read_csv(self.ProductioncostFiles_paths[0])
         self.h2_conversion_efficiency = float(self.H2_prod_cost[self.H2_prod_cost['Year']==self.year]['efficiency(kWh/kg)']) #[kWh/kg]
-        self.compressor_charge = float(self.H2_prod_cost[self.H2_prod_cost['Year']==self.year]['Variable OPEX (€/kg)']) #[kWh/kg]
+        self.compressor_charge = float(self.H2_prod_cost[self.H2_prod_cost['Year']==self.year]['Variable OPEX ($/kg)']) #[kWh/kg]
 
         self.RE_incentives = pd.read_csv(self.IncentiveFiles_paths[0])
         self.RE_incentives = self.RE_incentives[self.RE_incentives['Year'] == self.year]
-        self.ITC = dict(zip(self.RE_incentives['Tech'], self.RE_incentives['ITC (€/kg)'].fillna(0))) #[EUR/kWh]
-        self.PTC = dict(zip(self.RE_incentives['Tech'], self.RE_incentives['PTC (€/kg)'].fillna(0))) #[EUR/kWh]
+        self.ITC = dict(zip(self.RE_incentives['Tech'], self.RE_incentives['ITC ($/kg)'].fillna(0))) #[EUR/kWh]
+        self.PTC = dict(zip(self.RE_incentives['Tech'], self.RE_incentives['PTC ($/kg)'].fillna(0))) #[EUR/kWh]
         
-        self.storage_capacities = pd.read_csv(self.StorageCapacityFiles_paths[0]).set_index('Node')
+        self.storage_capacities = pd.read_csv(self.StorageCapacityFiles_paths[0]).set_index('Zone')
         self.storage_capacities = self.storage_capacities.applymap(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))
         self.storage_capacities = {index: row.to_dict() for index, row in self.storage_capacities.iterrows()} #[kg wk capacity]
 
@@ -304,7 +305,6 @@ class HYPSTAT:
         def demand_rule_2(m, t, zone):
             return (m.H2_Demand_Met[t,zone] == self.demand.loc[self.t_dict[t],zone]) #[kg/period]
 
-
         #self.m.demand_constraint = Constraint(m.T, m.Zones, rule=demand_rule)
         self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=demand_rule_2)
 
@@ -407,7 +407,7 @@ class HYPSTAT:
                 return (sum(m.Storage_Capacity[stor_tech, zone] for zone in m.Zones) <= m.Total_storage_capacity[stor_tech]) #[kg]
 
         self.m.Total_storage_capacity_constraint = Constraint(self.m.Stor_Techs, rule=Total_storage_capacity_rule)
-        
+
         ### LINK FLOW CONSTRAINTS ###
         print('Setting up flow constraints...')
         # Pipeline flow (update this later to be part of the variable bound)
@@ -451,7 +451,7 @@ class HYPSTAT:
 
         def reverse_max_truck_rule(m, t, link):
             return m.Truck_Flow[t,link] >= -self.links.loc[link,'Truck max capacity [kg/hr]']*self.h*m.Truck_flow_allowed[link] #[kg/period]
-        
+
         self.m.reverse_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=reverse_max_truck_rule)
 
         # Limit pipeline flows according to pipeline capacities
@@ -545,12 +545,12 @@ class HYPSTAT:
         self.m.Reverse_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_OPEX_rule)
 
         def Forward_Truck_Cost_rule(m, t, link): #TODO: generalize to all tank transport
-            return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.truck_cost*self.links.loc[link,'Truck distance [km]']/100) #[EUR/period] for now, would like to remove /100 and just handle in inputs
+            return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.truck_cost*self.links.loc[link,'Truck distance [mi]']/100) #[EUR/period] for now, would like to remove /100 and just handle in inputs
         
         self.m.Forward_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Truck_Cost_rule)
 
         def Reverse_Truck_Cost_rule(m, t, link):
-            return (m.Truck_Cost[t,link] >= -m.Truck_Flow[t,link]*self.truck_cost*self.links.loc[link,'Truck distance [km]']/100) #[EUR/period] for now, would like to remove /100 and just handle in inputs
+            return (m.Truck_Cost[t,link] >= -m.Truck_Flow[t,link]*self.truck_cost*self.links.loc[link,'Truck distance [mi]']/100) #[EUR/period] for now, would like to remove /100 and just handle in inputs
         
         self.m.Reverse_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Truck_Cost_rule)
 
@@ -570,7 +570,7 @@ class HYPSTAT:
         print('Setting up objective function...')
         #### Objective function
 
-        def get_CRF(interest=self.interest, years=self.payback_years):
+        def get_CRF(interest=0.1, years=30):
             return (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
 
         
@@ -583,7 +583,7 @@ class HYPSTAT:
             for zone in m.Zones)
             
             Pipeline_raw_CAPEX = sum(
-                ((m.Pipeline_Capacity[link]/self.h)*self.pipeline_cost_alpha + self.pipeline_cost_beta*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.link_distances.loc[link.split(' to ')[0],link.split(' to ')[1]]
+                ((m.Pipeline_Capacity[link]/self.h)*self.pipeline_cost_alpha + self.pipeline_cost_beta*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.links.loc[link,'Pipeline distance [mi]']
             for link in m.Links)
 
             Pipeline_CAPEX = Pipeline_raw_CAPEX*get_CRF() # + Pipeline_raw_CAPEX*0.01 #hard-coded for now, TODO: make pipeline opex as part of inputs
@@ -777,7 +777,7 @@ class HYPSTAT:
 
 test = HYPSTAT()
 test.two_step_solve(solver='glpk')
-test.write_outputs('Test Cases/test_case_LT_object')
+test.write_outputs('Test Cases/test_case_LT_object_v2')
 print('Done!')
 
 '''
@@ -814,4 +814,6 @@ Test cases:
         test_case_inputs_export_reopex : Added export zone and hourly electricity profile for RE_opex
         test_case_inputs_export_reopex_check : Same as above, check to make sure outputs are the same
         test_case_new_obj : objective ported from LT version, should compare to above 2 cases
+        test_case_LT_object : updated full object from LT version, including inputs
+        test_case_LT_object_v2 : updated full object from LT version, including inputs, fixed storage opex
         '''

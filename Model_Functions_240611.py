@@ -19,7 +19,7 @@ def get_renewable_profiles(year, techs, path, drop_capacity_below=False):
 
         for f in tech_files:
             
-            zone = f.split('_Node_')[1].split('_')[0]
+            zone = f.split('_Zone')[1].split('_')[0] #TODO: Either set formatting constraints or make flexible for user to input
             profile = pd.read_csv(f, index_col=0)
 
             if len(profile) > 0:
@@ -71,19 +71,19 @@ def get_demand(all_renewable_profiles, year, daily_demand, freq, file_path):
 
     # Reshape demand data
     demand = demand.set_index(['Period', 'Network ID'])['total_demand'].unstack().sort_index()
-    demand.index = demand.index.str.replace('P', '').astype(int)
+    demand.index = demand.index.str.replace('M', '').astype(int)
     demand = demand.sort_index()
 
-    # Adjust for daily demand
-    if daily_demand:
+    # Adjust for daily demand; TODO: make flexible for user input at different demand resolutions
+    if daily_demand: 
         #demand.index = demand.index.astype(str) + '-' + str(year)
         #demand.index = pd.to_datetime(demand.index, dayfirst=True, format='%d-%Y')
 
         #Calculate periods in a month
-        periods_in_day = all_renewable_profiles.resample(freq).first().resample('D').count().iloc[:, 0]
+        periods_in_month = all_renewable_profiles.resample(freq).first().resample('MS').count().iloc[:, 0]
         
         # Adjust demand for daily periods
-        demand = pd.concat([demand[d].values / periods_in_day for d in demand.columns], axis=1, keys=demand.columns)
+        demand = pd.concat([demand[d].values / periods_in_month for d in demand.columns], axis=1, keys=demand.columns)
         demand = demand.reindex(all_renewable_profiles.resample(freq).first().index).ffill()
         #demand.index = pd.to_datetime(demand.index.astype(str) + '-' + str(year), dayfirst=True)
 
@@ -94,17 +94,17 @@ def get_links(path):
     links = pd.read_csv(path).set_index('Link')
     #links = links[links['Pipeline allowed']=='Y']
     
-    all_zones = links[['End node', 'Start node']].stack().unique()
+    all_zones = links[['End zone', 'Start zone']].stack().unique()
     #links = links.loc[~links['Delivery Method'].isna()]
     
     flow_direction = get_link_flow_direction(links.index, separator=' to ')
     flow_direction = flow_direction.reindex(all_zones, axis=1).fillna(0)
     
-    links_to_zones = pd.concat([links['End node'], links['Start node']]).reset_index().set_index(0)
+    links_to_zones = pd.concat([links['End zone'], links['Start zone']]).reset_index().set_index(0)
     links_to_zones = dict(links_to_zones.Link.groupby(links_to_zones.index).apply(set))
     #links['Tech'] = 'Pipeline'
     #link_distances = pd.concat([links['Tech'],links['Pipeline distance [km]']],axis=1)
-    link_distances = links['Pipeline distance [km]']
+    link_distances = links['Pipeline distance [mi]']
     max_cap = (links['Pipeline max capacity [kg/hr]']).unique()
     
     return flow_direction, links, all_zones, links_to_zones
@@ -124,7 +124,7 @@ def get_truck_links(path):
     links_to_zones = dict(links_to_zones.Link.groupby(links_to_zones.index).apply(set))
 
     links['Tech'] = 'Truck'
-    link_distances = pd.concat([links['Tech'],links['Truck distance [km]']],axis=1)
+    link_distances = pd.concat([links['Tech'],links['Truck distance [mi]']],axis=1)
     print(link_distances)
     max_cap = (links['Truck max capacity [kg/hr]']).unique()
 
@@ -196,7 +196,7 @@ def get_build_cost_matrix(FinancialFiles_paths, REcostFiles_paths, Productioncos
             capex = RE_technology_build.loc[tech, 'CAPEX($/kW)']
             opex = RE_technology_build.loc[tech, 'Fix OPEX($/kW-yr)']
             recovery_time = RE_technology_build.loc[tech, 'Recovery_time (years)']
-            wacc_nominal = float(RE_technology_build.loc[tech, 'WACC_Nominal'])
+            wacc_nominal = float(RE_technology_build.loc[tech, 'WACC'])
             interest = wacc_nominal
             build_cost.loc[tech, zone] = get_annuity(capex, interest, recovery_time) + opex
 
@@ -204,15 +204,15 @@ def get_build_cost_matrix(FinancialFiles_paths, REcostFiles_paths, Productioncos
             capex = H2_technology_build.loc[tech, 'CAPEX($/kW)']
             opex = H2_technology_build.loc[tech, 'OPEX($/kW-yr)']
             recovery_time = H2_technology_build.loc[tech, 'Recovery_time (years)']
-            wacc_nominal = float(H2_technology_build.loc[tech, 'WACC_Nominal'])
+            wacc_nominal = float(H2_technology_build.loc[tech, 'WACC'])
             interest = wacc_nominal
             build_cost.loc[tech, zone] = get_annuity(capex, interest, recovery_time) + opex
 
         for tech in H2_storage_build.index:
-            capex = H2_storage_build.loc[tech, 'CAPEX (€/kg)']
-            opex = H2_storage_build.loc[tech, 'OPEX (€/kg)']
+            capex = H2_storage_build.loc[tech, 'CAPEX ($/kg)']
+            opex = H2_storage_build.loc[tech, 'OPEX ($/kg)']
             recovery_time = H2_storage_build.loc[tech, 'Recovery_time (years)']
-            wacc_nominal = float(H2_storage_build.loc[tech, 'WACC_Nominal']) 
+            wacc_nominal = float(H2_storage_build.loc[tech, 'WACC']) 
             interest = wacc_nominal
             build_cost.loc[tech, zone] = get_annuity(capex, interest, recovery_time) + opex
 
