@@ -2,6 +2,6 @@ Year,Tech,CAPEX ($/kg),OPEX ($/kg)
 2030,Tank,880,0.055
 2040,Tank,880,0.055
 2050,Tank,880,0.055
-2030,Cavern,38.5,0.247
-2040,Cavern,38.5,0.247
-2050,Cavern,38.5,0.247
+2030,Geologic,38.5,0.247
+2040,Geologic,38.5,0.247
+2050,Geologic,38.5,0.247
