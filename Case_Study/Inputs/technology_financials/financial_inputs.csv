@@ -1,4 +1,4 @@
-Tech,Year,Recovery_time (years),Discount_Rate
+Tech,Year,Recovery_time (years),WACC
 Solar,All years,25,0.1
 Onshore Wind,All years,25,0.1
 Offshore Wind,All years,20,0.1
