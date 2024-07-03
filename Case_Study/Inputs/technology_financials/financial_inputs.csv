@@ -1,11 +1,11 @@
 Tech,Year,Recovery_time (years),WACC
-Solar,All years,25,0.1
-Onshore Wind,All years,25,0.1
-Offshore Wind,All years,20,0.1
-Nuclear,All years,40,0.1
-PEM Electrolyzer,All years,25,0.1
-Tank,All years,25,0.1
-Cavern,All years,40,0.1
-Pipelines,All years,40,0.1
-Compressors,All years,25,0.1
-Grid,All years,25,0.1
+Solar,2030,25,0.1
+Onshore_Wind,2030,25,0.1
+Offshore_Wind,2030,20,0.1
+Nuclear,2030,40,0.1
+PEM Electrolyzer,2030,25,0.1
+Tank,2030,25,0.1
+Geologic,2030,40,0.1
+Pipelines,2030,40,0.1
+Compressors,2030,25,0.1
+Grid,2030,25,0.1

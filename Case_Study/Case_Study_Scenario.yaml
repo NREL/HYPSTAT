@@ -20,44 +20,46 @@ pipeline_cost_beta : 1325659
 
 #Time controls (use for intrayear analysis)
 start : '1 Jan ' #start date for intrayear analysis 
-end : '31 Dec ' # end date for intrayear analysis
+end : '7 Jan ' # end date for intrayear analysis
 coarse_resolution : 24 #resolution in hours to use for 1st step with pipeline location optimization (24 or higher recommended)
 fine_resolution : 2 #resolution in hours to use for 2nd step with specified pipeline locations (1-4 recommended)
 
 
+# Potential TODO: specify "parent" input folder
+
 #FilePath:
 demandFile:
-  - "../Sample_Case/Inputs/demand/h2_demand.csv"
+  - "Case_Study/Inputs/demand/h2_demand.csv"
 
 FinancialFile:
-  - "../Sample_Case/Inputs/networks/Links.csv"
+  - "Case_Study/Inputs/technology_financials/financial_inputs.csv"
 
 REcostFile:
-  - "../Inputs/technology_financials/renewable-build-cost.csv"
+  - "Case_Study/Inputs/technology_financials/renewable-build-cost_low-solar.csv"
 
 REopexFile:
-  - "../Inputs/technology_financials/LT00_2030_PLEXOSprices_240203.csv"
+  - "Case_Study/Inputs/technology_financials/sample_grid_prices.csv"
 
 ProductioncostFile:
-  - "../Inputs/technology_financials/hydrogen-production-cost.csv"
+  - "Case_Study/Inputs/technology_financials/hydrogen-production-cost.csv"
 
 H2DeliveryFile:
-  - "../Inputs/technology_financials/hydrogen-delivery-cost.csv"
+  - "Case_Study/Inputs/technology_financials/hydrogen-delivery-cost.csv"
 
 H2StorageFile:
-  - "../Inputs/technology_financials/hydrogen-storage-cost.csv"
+  - "Case_Study/Inputs/technology_financials/hydrogen-storage-cost.csv"
 
 SupplycurveFolder:
-  - "../Inputs/supply_curves_baseline"
+  - "Case_Study/Inputs/supply_curves"
 
 NetworksFiles:
-  - "../Inputs/networks/2030_LT_links_20240118.csv"
+  - "Case_Study/Inputs/networks/Links.csv"
 
 IncentiveFiles:
-  - "../Inputs/policy/renewable-incentives.csv"
+  - "Case_Study/Inputs/policy/renewable-incentives.csv"
 
 StorageCapacityFiles:
-  - "../Inputs/storage/storage_capacities.csv"
+  - "Case_Study/Inputs/storage/storage_capacities.csv"
 
 StorageLimitsFiles:
-  - "../Inputs/storage/storage_constrain.csv"
+  - "Case_Study/Inputs/storage/storage_constrain.csv"

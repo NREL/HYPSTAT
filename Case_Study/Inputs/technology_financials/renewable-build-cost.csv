@@ -11,6 +11,6 @@ Year,Tech,CAPEX($/kW),Fix OPEX($/kW-yr),Variable OPEX ($/kW-yr)
 2030,Grid,0,0,0
 2040,Grid,0,0,0
 2050,Grid,0,0,0
-2030,Nuclear,0,0,0
-2040,Nuclear,0,0,0
-2050,Nuclear,0,0,0
+2030,Nuclear,1000,50,0
+2040,Nuclear,1000,50,0
+2050,Nuclear,1000,50,0
