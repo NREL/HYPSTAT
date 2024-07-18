@@ -1,4 +1,4 @@
-Year,Tech,CAPEX($/kW),Fix OPEX($/kW-yr),Variable OPEX ($/kW-yr)
+Year,Tech,CAPEX($/kW),Fix OPEX($/kW-yr),Variable OPEX ($/kWh)
 2030,Onshore_Wind,1205,27,0
 2040,Onshore_Wind,1088,25.15,0
 2050,Onshore_Wind,970,23.3,0

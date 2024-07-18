@@ -41,9 +41,8 @@ class HYPSTAT:
         self.min_exports_ratio = yaml_data.get('min_exports_ratio', None)
         self.import_zones = yaml_data.get('import_zones', None)
         self.export_zones = yaml_data.get('export_zones', None)
-        self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None) #[EUR/kg]
+        self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None)
         self.grid_prices_by_loc = yaml_data.get('grid_prices_by_loc', False) #if missing, defaults to national grid prices
-        self.allow_negative_grid_prices = yaml_data.get('allow_negative_grid_prices', False) #if missing, defaults to False (not allowing negative prices)
 
         self.start = yaml_data.get('start', None)
         self.end = yaml_data.get('end', None)
@@ -54,8 +53,9 @@ class HYPSTAT:
         self.demandFiles_paths = yaml_data.get('demandFile', [])
         self.FinancialFiles_paths = yaml_data.get('FinancialFile', [])
         self.REcostFiles_paths = yaml_data.get('REcostFile', [])
+        
         #hourly electricty profile
-        self.REopexFiles_paths = yaml_data.get('REopexFile', [])
+        self.REcostProfileFiles_paths = yaml_data.get('REcostProfileFile', [])
         
         self.ProductioncostFiles_paths = yaml_data.get('ProductioncostFile', [])
         self.H2DeliveryFile_paths = yaml_data.get('H2DeliveryFile', [])
@@ -68,74 +68,83 @@ class HYPSTAT:
         self.StorageLimitsFiles_paths = yaml_data.get('StorageLimitsFiles', [])
 
         self.REcostFiles = pd.concat([pd.read_csv(path) for path in self.REcostFiles_paths], ignore_index=True)
-        self.REopexFiles = pd.concat([pd.read_csv(path) for path in self.REopexFiles_paths], ignore_index=True)
-        self.REopexFiles.fillna(0,inplace=True)
-        self.REopexFiles.index = self.time_periods
-        self.year_tech_dict = self.create_year_tech_dict(self.REcostFiles)
-        self.techs = self.year_tech_dict[self.year]
+        #self.REcostProfileFiles = pd.concat([pd.read_csv(path) for path in self.REcostProfileFiles_paths], ignore_index=True)
+        #self.REcostProfileFiles.fillna(0,inplace=True)
+        #self.REcostProfileFiles.index = self.time_periods
+        self.techs = (self.REcostFiles.loc[self.REcostFiles['Year']==self.year])['Tech'].unique()
+        #TODO: maybe have technologies as manual input
 
         self.H2StorageFile = pd.concat([pd.read_csv(path) for path in self.H2StorageFile_paths], ignore_index=True)
-        self.year_stor_tech_dict = self.create_year_tech_dict(self.H2StorageFile)
-        self.stor_techs = self.year_stor_tech_dict[self.year]
-        self.Storage_charge_cost = dict(zip(self.H2StorageFile['Tech'],self.H2StorageFile['OPEX ($/kg)'])) #NOTE: only charge cost, but labeled as opex
-       
-        print(self.Storage_charge_cost)
-        
-        self.all_renewable_profiles, self.capacities = get_renewable_profiles(year=self.year,techs = self.techs,path=self.SupplycurveFolder_paths[0],drop_capacity_below=False) #[RE profiles: CF (kWh/kW)/hr for each hour; capacities: MW] TODO: make capacities kW?
-        self.demand = get_demand(self.all_renewable_profiles,year=self.year, daily_demand=True,freq='h', file_path=self.demandFiles_paths[0])
+    
+        self.stor_techs = (self.H2StorageFile.loc[self.H2StorageFile['Year']==self.year])['Tech'].unique()
+        self.Storage_charge_cost = dict(zip(self.H2StorageFile['Tech'], self.H2StorageFile['OPEX ($/kg)'])) #NOTE: only charge cost, but labeled as opex
+               
+        self.all_renewable_profiles, self.capacities = get_renewable_profiles(year=self.year, techs=self.techs, path=self.SupplycurveFolder_paths[0], drop_capacity_below=False) #[RE profiles: CF (kWh/kW)/hr for each hour; capacities: MW] TODO: make capacities kW?
+        self.demand = get_demand(self.all_renewable_profiles, year=self.year, daily_demand=True, freq='h', file_path=self.demandFiles_paths[0])
         
         self.link_flow_direction, self.links, self.all_zones, self.links_to_zones = get_links(self.Networks_paths[0])
 
         #Fill NaNs in links to avoid issues in model solving
-        self.links.fillna(value=0,inplace=True)
-        
-        #self.truck_link_flow_direction, self.truck_links, self.truck_all_zones, self.truck_links_to_zones,self.truck_link_distances,self.truck_max_cap = get_truck_links(self.Networks_paths[0])
-        #self.all_link_flow_direction, self.all_links, self.all_all_zones, self.all_links_to_zones, = get_all_links(self.Networks_paths[0])
-
+        self.links.fillna(value=0, inplace=True)
         
         self.delivery_cost = pd.read_csv(self.H2DeliveryFile_paths[0])
-        self.delivery_cost = self.delivery_cost[self.delivery_cost['Year'] == self.year]
-        print(self.delivery_cost)
-        self.cost_dict = dict(zip(self.delivery_cost['Tech'], self.delivery_cost['Variable_OPEX ($/kg)']))
-        #TODO: update to $/kg not EUR
-        self.links['Pipeline Opex (€/kg)'] = self.cost_dict['Pipeline'] * \
+        self.delivery_cost = (self.delivery_cost[self.delivery_cost['Year'] == self.year]).set_index('Tech')
+        self.links['Pipeline Opex ($/kg)'] = self.delivery_cost.loc['Pipeline','Variable OPEX ($/kg/100-km)'] * \
                                                   self.links['Pipeline distance [km]'] / 100
-        
-       
+
+        self.links['Truck LCOT ($/kg)'] = self.delivery_cost.loc['Truck','LCOT ($/kg/100-km)'] * \
+                                                  self.links['Truck distance [km]'] / 100
+
+        self.pipeline_fixed_capex = self.delivery_cost.loc['Pipeline','Fixed CAPEX ($/km)']
+        self.pipeline_capacity_capex = self.delivery_cost.loc['Pipeline','Capacity CAPEX ($/(kg/hr)/km)']  
+        self.pipeline_fixed_opex_frac = self.delivery_cost.loc['Pipeline','Fixed OPEX (fraction of CAPEX/yr)']      
+
+        #TODO: figure out better input structure for pipeline opex
         if self.Pipeline_opex_override_path is not None and self.Pipeline_opex_override_path.count(None) != len(self.Pipeline_opex_override_path):
             self.pipeline_opex_overrides = pd.concat([pd.read_csv(path) for path in self.Pipeline_opex_override_path], ignore_index=True)
             self.pipeline_opex_overrides.set_index('Link',drop=True,inplace=True)
             print(self.pipeline_opex_overrides)
             for link in self.links.index:
                 if link in self.pipeline_opex_overrides.index:
-                    self.links.loc[link,'Pipeline Opex (€/kg)'] = self.pipeline_opex_overrides.loc[link,'Pipeline OPEX override [EUR/kg]']
+                    self.links.loc[link,'Pipeline Opex ($/kg)'] = self.pipeline_opex_overrides.loc[link,'Pipeline OPEX override [$/kg]']
 
-        #### WAYS TO GENEREALIZE truck and link distances- rename truck LCOT
-        self.truck_cost = self.cost_dict['Truck'] #[EUR/kg-100km]
-        
-        ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
         #TODO: update this so that it also has an index for time, and make sure indexing matches in objective function
         
-        ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
-        print(self.techs)
-        #self.re_opex = pd.DataFrame(data=0,index=self.techs,columns=self.all_zones)        
-        multi_index = pd.MultiIndex.from_product([self.all_zones,self.techs])
-        self.re_opex = pd.DataFrame(data=0, index=self.time_periods, columns=multi_index) #[EUR/MWh] (converted later to EUR/kWh)
-        #ask for 2030 data and convert to euro
-        #TODO: for now, just overwriting grid costs. Should we remove RE OPEX from tech financial file?
-
-        for z in self.re_opex.columns.get_level_values(0):
-            if self.grid_prices_by_loc:
-                self.re_opex.loc[:,(z,"Grid")] = self.REopexFiles[z]/1000 # [$/kWh]
-            else:
-                self.re_opex.loc[:,(z,"Grid")] = self.REopexFiles['Price ($/MWh)']/1000 # [$/kWh] (LCOE) 0.2 value for testing
         
-        if not self.allow_negative_grid_prices:
-            self.re_opex.clip(lower=0,inplace=True)
+        
+        
+        
+        ######RE OPEX--manual input for now for testing; TODO: coordinate with Yijin's inputs
+        # BUILD ELECTRICITY GEN OPEX TABLE
+        #   The electricity gen opex table is indexed for each zone and technology and is indexed for time intervals to allow for variable pricing (e.g., wholesale grid).
+        #   A constant variable opex (in currency/kWh) is automatically loaded from the technology financials file. 
+        #   If provided, profile files for electricity gen opex will override the constant value in the financial files--i.e., the variable OPEX value in the technology financials file is NOT used.
+                    
+        multi_index = pd.MultiIndex.from_product([self.all_zones,self.techs])
+        self.re_opex = pd.DataFrame(data=0, index=self.time_periods, columns=multi_index)
 
-        #print(self.REopexFiles['Price ($/MWh)'] )
-        #print((self.re_opex.loc[(slice(None), "Grid")]))
-            
+        # fill electricity gen opex table with constant variable opex values from REcostFiles
+        for z in self.all_zones:
+            for tech in self.techs:
+                self.re_opex.loc[:,(z,tech)] = self.REcostFiles.set_index(['Year','Tech']).loc[(self.year,tech),'Variable OPEX ($/kWh)']
+
+        # override electricity gen opex for technologies with time profiles (e.g., grid representing hourly wholesale pricing)
+        #   Note: REcostProfileFiles must start with the name of the technology that they should be overriding. If multiple files for a single technology are provided,
+        #   only the first will be used. If a file does not start with the name of the technology, that file will not be used.
+                
+        # TODO: add locational pricing
+        for z in self.all_zones:
+            for tech in self.techs:
+                if tech not in self.REcostProfileFiles_paths.keys():
+                    continue
+                self.REcostProfileFiles = pd.read_csv(self.REcostProfileFiles_paths[tech])
+                self.REcostProfileFiles.fillna(0,inplace=True)
+                self.REcostProfileFiles.index = self.time_periods
+                if self.grid_prices_by_loc: #CAN ONLY BE FALSE RIGHT NOW
+                    self.re_opex.loc[:,(z,tech)] = self.REcostProfileFiles[z]/1000 # [$/kWh]
+                else:
+                    self.re_opex.loc[:,(z,tech)] = self.REcostProfileFiles['Price ($/MWh)']/1000 #TODO: remove 1000 and figure out way to input or specify column name
+                
         #year is removed
         self.build_cost = get_build_cost_matrix(self.FinancialFiles_paths,self.REcostFiles_paths,self.ProductioncostFiles_paths,self.H2StorageFile_paths,self.year, self.all_zones) #[EUR/kW for generators and electrolyzers, EUR/kg wk cap for storage]
         
@@ -162,11 +171,7 @@ class HYPSTAT:
         self.Storage_charge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['charge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
         self.Storage_discharge_limit = dict(zip(self.H2_Storage_Limit['Storage Tech'],self.H2_Storage_Limit['discharge limit'].apply(lambda x: 'inf' if str(x).strip("'") == 'inf' else pd.to_numeric(x, errors='coerce'))))
         self.storage_limits = yaml_data.get('storage_limits', None)
-
-        #self.bigM = self.max_cap
-        #self.truck_size_limit = self.truck_max_cap
-        self.pipeline_cost_alpha = yaml_data.get('pipeline_cost_alpha',None) #[EUR/(kg/hr)-km]
-        self.pipeline_cost_beta = yaml_data.get('pipeline_cost_beta',None) #[EUR/km]
+      
 
         self.all_renewable_profiles = self.all_renewable_profiles.loc[self.start + str(self.year): self.end + str(self.year)]
         self.year_ratio = len(self.all_renewable_profiles.resample('d').first()) / 365
@@ -192,21 +197,13 @@ class HYPSTAT:
                     #close to 0, pipeline doesn't exist
                     self.links.loc[link,'Pipeline max capacity [kg/hr]'] = 0
                     self.links.loc[link,'Pipeline allowed'] = 'N'
-            #print(self.links)
-        
-        #print(self.links)
-        #raise Exception
+
 
         if self.h != 1: #TODO: think about time resolution, for now leave as minimum 1 hour
             self.all_renewable_profiles = self.all_renewable_profiles.resample('{}h'.format(self.h)).sum() #[period CF, i.e., (kWh/kW)/period]
             self.demand = self.demand.resample('{}h'.format(self.h)).sum() # [kg/period]
             self.re_opex = self.re_opex.resample('{}h'.format(self.h)).mean() # [EUR/kWh, average]
 
-    def create_year_tech_dict(self, REcostFiles):
-        year_tech_dict = {}
-        for year, group in REcostFiles.groupby('Year'):
-            year_tech_dict[year] = list(group['Tech'])
-        return year_tech_dict
     
     def load_model(self,optimize_pipelines=False):
         self.m = ConcreteModel()
@@ -268,7 +265,7 @@ class HYPSTAT:
 
         # Hydrogen
         self.m.H2_Production = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)   #[kg/period] #TODO: split into different types of production
-        self.m.H2_Demand_Met = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period] #TODO: rename H2_demand_met or similar
+        self.m.H2_Demand_Met = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period]
         self.m.H2_Unserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period],bounds=(0,0) )   #kg/per interval
         self.m.H2_Overserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period] ,bounds=(0,0) )  
         self.m.H2_Imports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period] imported hydrogen, kg/interval
@@ -539,22 +536,22 @@ class HYPSTAT:
         
         # Set and truck costs
         def Forward_Pipeline_OPEX_rule(m, t, link):
-            return (m.Pipeline_OPEX[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Pipeline Opex (€/kg)']) #[EUR/period]
+            return (m.Pipeline_OPEX[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Pipeline Opex ($/kg)']) #[EUR/period]
 
         self.m.Forward_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Pipeline_OPEX_rule)
 
         def Reverse_Pipeline_OPEX_rule(m, t, link):
-            return (m.Pipeline_OPEX[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Pipeline Opex (€/kg)']) #[EUR/period]
+            return (m.Pipeline_OPEX[t,link] >= -m.Pipeline_Flow[t,link]*self.links.loc[link,'Pipeline Opex ($/kg)']) #[EUR/period]
 
         self.m.Reverse_Pipeline_OPEX_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Pipeline_OPEX_rule)
 
         def Forward_Truck_Cost_rule(m, t, link): #TODO: generalize to all tank transport
-            return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.truck_cost*self.links.loc[link,'Truck distance [km]']/100) #[EUR/period] for now, would like to remove /100 and just handle in inputs
+            return (m.Truck_Cost[t,link] >= m.Truck_Flow[t,link]*self.links.loc[link,'Truck LCOT ($/kg)']) #[EUR/period] for now, would like to remove /100 and just handle in inputs
         
         self.m.Forward_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Forward_Truck_Cost_rule)
 
         def Reverse_Truck_Cost_rule(m, t, link):
-            return (m.Truck_Cost[t,link] >= -m.Truck_Flow[t,link]*self.truck_cost*self.links.loc[link,'Truck distance [km]']/100) #[EUR/period] for now, would like to remove /100 and just handle in inputs
+            return (m.Truck_Cost[t,link] >= -m.Truck_Flow[t,link]*self.links.loc[link,'Truck LCOT ($/kg)']) #[EUR/period] for now, would like to remove /100 and just handle in inputs
         
         self.m.Reverse_Truck_Cost_constraint = Constraint(self.m.T, self.m.Links, rule=Reverse_Truck_Cost_rule)
 
@@ -587,10 +584,10 @@ class HYPSTAT:
             for zone in m.Zones)
             
             Pipeline_raw_CAPEX = sum(
-                ((m.Pipeline_Capacity[link]/self.h)*self.pipeline_cost_alpha + self.pipeline_cost_beta*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.links.loc[link,'Pipeline distance [km]']
+                ((m.Pipeline_Capacity[link]/self.h)*self.pipeline_capacity_capex + self.pipeline_fixed_capex*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.links.loc[link,'Pipeline distance [km]']
             for link in m.Links)
 
-            Pipeline_CAPEX = Pipeline_raw_CAPEX*get_CRF() + Pipeline_raw_CAPEX*0.01 #hard-coded for now, TODO: make pipeline opex as part of inputs
+            Pipeline_CAPEX = Pipeline_raw_CAPEX*get_CRF() + Pipeline_raw_CAPEX*self.pipeline_fixed_opex_frac #hard-coded for now, TODO: make pipeline opex as part of inputs
 
             Transmission_OPEX = sum(
                 sum(m.Pipeline_OPEX[t,link] for t in m.T) + #pipeline opex
@@ -781,7 +778,7 @@ class HYPSTAT:
 
 test = HYPSTAT(yaml_file_path='Case_Study/Case_Study_Scenario.yaml')
 test.two_step_solve(solver='glpk')
-test.write_outputs('Case_Study/Outputs/test19')
+test.write_outputs('Case_Study/Outputs/active_test')
 print('Done!')
 
 '''

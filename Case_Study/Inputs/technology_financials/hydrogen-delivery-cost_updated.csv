@@ -1,0 +1,7 @@
+﻿Year,Tech,Fixed CAPEX ($/km),Capacity CAPEX ($/(kg/hr)/km),Fixed OPEX (fraction of CAPEX/yr),Variable OPEX ($/kg/100-km),LCOT ($/kg/100-km)
+2030,Pipeline,1325659,7.717,0.01,0.055,N/A
+2040,Pipeline,1325659,7.717,0.01,0.055,N/A
+2050,Pipeline,1325659,7.717,0.01,0.055,N/A
+2030,Truck,N/A,N/A,N/A,N/A,0.8
+2040,Truck,N/A,N/A,N/A,N/A,0.8
+2050,Truck,N/A,N/A,N/A,N/A,0.8
