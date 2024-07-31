@@ -1,4 +1,4 @@
-Network ID,Period,h2_demand[kg/hr]
+Node,Period,h2_demand[kg/hr]
 A,D1,0
 A,D2,0
 A,D3,0

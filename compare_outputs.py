@@ -99,6 +99,10 @@ for tf in test_files:
         if common_sums_match(tsum,csum):
             print('\tBut technology sums match')
     
+    if f=='build_cost.csv' and dif_flagged:
+        if np.allclose(tdata.sort_index(axis='index').sort_index(axis='columns').values,cdata.sort_index(axis='index').sort_index(axis='columns').values):
+            print('\tBut sorted data matches')
+    
     if dif_flagged:
         print()
 

@@ -4,6 +4,11 @@ firstYear         : 2030  # Units: yr
 lastYear          : 2050  # Units: yr
 timeWindow        : 10  # Units: yr
 
+#Scenario design:
+nodes: ['B','A','C','D','E','F'] #nodes to consider
+#techs: ['Grid','Nuclear','Offshore_Wind','Onshore_Wind','Solar'] #generation technologies to be considered
+#stor_techs: ['Geologic','Tank'] #storage technologies to be considered
+
 
 #Import and export:
 max_imports_ratio : 0 # 25% of the total hydrogen system demand
