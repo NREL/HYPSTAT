@@ -652,9 +652,6 @@ class HYPSTAT:
         self.build_cost.to_csv(results_dir+'/build_cost.csv')
         incentive_data = self.RE_incentives.xs(self.year,level='Year')
         incentive_data.to_csv(results_dir+'/incentives.csv')
-        #ITC_data = self.RE_incentives.xs(self.year,level='Year')['ITC ($/kWh)'] #pd.DataFrame.from_dict(self.ITC,orient='index')
-        #ITC_data.to_csv(results_dir+'/ITC.csv')
-
       
         
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
@@ -688,7 +685,6 @@ class HYPSTAT:
         Renewable_Production_Tech = Renewable_Production.groupby(level=0).sum()
         Renewable_Production = Renewable_Production.groupby(level=1).sum()
         Renewable_Production.index=list(self.t_dict.values())
-        #Renewable_Production.columns = list(techs)
         Renewable_Production.to_csv(results_dir+'/Renewable_Production.csv')
         Renewable_Production_Tech.to_csv(results_dir+'/Renewable_Production_Tech_Total.csv')
 
