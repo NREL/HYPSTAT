@@ -4,11 +4,6 @@ firstYear         : 2030  # Units: yr
 lastYear          : 2050  # Units: yr
 timeWindow        : 10  # Units: yr
 
-#Scenario design:
-nodes: ['B','A','C','D','E','F'] #nodes to consider
-#techs: ['Grid','Nuclear','Offshore_Wind','Onshore_Wind','Solar'] #generation technologies to be considered
-#stor_techs: ['Geologic','Tank'] #storage technologies to be considered
-
 
 #Import and export:
 max_imports_ratio : 0 # 25% of the total hydrogen system demand
@@ -27,7 +22,7 @@ pipeline_cost_power: 0.395
 
 #Time controls (use for intrayear analysis)
 start : '1 Jan ' #start date for intrayear analysis 
-end : '7 Jan ' # end date for intrayear analysis
+end : '1 Jan ' # end date for intrayear analysis
 coarse_resolution : 24 #resolution in hours to use for 1st step with pipeline location optimization (24 or higher recommended)
 fine_resolution : 2 #resolution in hours to use for 2nd step with specified pipeline locations (1-4 recommended)
 
@@ -36,37 +31,37 @@ fine_resolution : 2 #resolution in hours to use for 2nd step with specified pipe
 
 #FilePath:
 demandFile:
-  - "Case_Study/Inputs/demand/h2_demand.csv"
+  - "Inputs/demand/h2_demand.csv"
 
 FinancialFile:
-  - "Case_Study/Inputs/technology_financials/financial_inputs.csv"
+  - "Inputs/technology_financials/financial_inputs.csv"
 
 REcostFile:
-  - "Case_Study/Inputs/technology_financials/renewable-build-cost_low-solar.csv"
+  - "Inputs/technology_financials/renewable-build-cost_low-solar.csv"
 
-REcostProfileFile:
-  Grid: "Case_Study/Inputs/technology_financials/sample_grid_prices.csv"
+REopexFile:
+  - "Inputs/technology_financials/sample_grid_prices.csv"
 
 ProductioncostFile:
-  - "Case_Study/Inputs/technology_financials/hydrogen-production-cost.csv"
+  - "Inputs/technology_financials/hydrogen-production-cost.csv"
 
 H2DeliveryFile:
-  - "Case_Study/Inputs/technology_financials/hydrogen-delivery-cost_updated.csv"
+  - "Inputs/technology_financials/hydrogen-delivery-cost.csv"
 
 H2StorageFile:
-  - "Case_Study/Inputs/technology_financials/hydrogen-storage-cost.csv"
+  - "Inputs/technology_financials/hydrogen-storage-cost.csv"
 
 SupplycurveFolder:
-  - "Case_Study/Inputs/supply_curves"
+  - "Inputs/supply_curves"
 
 NetworksFiles:
-  - "Case_Study/Inputs/networks/Links.csv"
+  - "Inputs/networks/Links.csv"
 
 IncentiveFiles:
-  - "Case_Study/Inputs/policy/renewable-incentives.csv"
+  - "Inputs/policy/renewable-incentives.csv"
 
 StorageCapacityFiles:
-  - "Case_Study/Inputs/storage/storage_capacities.csv"
+  - "Inputs/storage/storage_capacities.csv"
 
 StorageLimitsFiles:
-  - "Case_Study/Inputs/storage/storage_constrain.csv"
+  - "Inputs/storage/storage_constrain.csv"
