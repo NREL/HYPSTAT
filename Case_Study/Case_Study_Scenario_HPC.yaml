@@ -50,7 +50,7 @@ ProductioncostFile:
   - "Inputs/technology_financials/hydrogen-production-cost.csv"
 
 H2DeliveryFile:
-  - "Inputs/technology_financials/hydrogen-delivery-cost.csv"
+  - "Inputs/technology_financials/hydrogen-delivery-cost_updated.csv"
 
 H2StorageFile:
   - "Inputs/technology_financials/hydrogen-storage-cost.csv"
