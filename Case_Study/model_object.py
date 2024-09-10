@@ -740,10 +740,10 @@ class HYPSTAT:
         self.Pipeline_Exists.to_csv(results_dir+'/Pipeline_Exists.csv')
 
 
-test = HYPSTAT(yaml_file_path='Case_Study/Case_Study_Scenario.yaml')
-test.two_step_solve(solver='glpk')
-test.write_outputs('Case_Study/Outputs/active_test')
-print('Done!')
+#test = HYPSTAT(yaml_file_path='Case_Study/Case_Study_Scenario.yaml')
+#test.two_step_solve(solver='glpk')
+#test.write_outputs('Case_Study/Outputs/active_test')
+#print('Done!')
 
 '''
 GUIDE TO TEST CASES:
