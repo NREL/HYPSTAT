@@ -5,5 +5,5 @@ for year in years:
     print()
     test = HYPSTAT(yaml_file_path='Case_Study_Scenario_HPC.yaml',year=year)
     test.two_step_solve(solver='gurobi')
-    test.write_outputs('Outputs/Case_Study/{year}')
+    test.write_outputs('Outputs/Case_Study')
     print('Done!')

@@ -6,7 +6,7 @@
 #SBATCH --job-name=hypstat_case_study
 #SBATCH --mail-user=yijin.li@nrel.gov
 #SBATCH --mail-type=BEGIN,END,FAIL
-#SBATCH -A h2nyserda
+#SBATCH -A markers
 #SBATCH -o hypstat_case_study.log
 
 module purge
