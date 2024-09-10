@@ -15,7 +15,7 @@ import copy
 
 from pyomo.environ import *
 
-from model_functions_240731 import *
+from model_functions import *
 
 #TODO rename all zones and other variables
 
