@@ -43,7 +43,7 @@ FinancialFile:
 REcostFile:
   - "Inputs/technology_financials/renewable-build-cost_low-solar.csv"
 
-REopexFile:
+REcostProfileFile:
   Grid: "Inputs/technology_financials/sample_grid_prices.csv"
 
 ProductioncostFile:
