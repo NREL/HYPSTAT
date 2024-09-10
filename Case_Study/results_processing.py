@@ -238,7 +238,7 @@ class Scenario:
 
         self.nw_re_lcoe = self.re_annual_cost.sum()/self.re_annual_used.sum()
         
-        #calculate compression opex
+        #calculate compression opex b
       
         #self.comp_opex = self.H2_Production.sum(axis=0)*self.prod_inputs.loc[(self.year,'PEM Electrolyzer'),'Variable OPEX ($/kg)']
 
