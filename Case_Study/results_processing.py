@@ -57,11 +57,10 @@ class Scenario:
         self.Pipeline_Capacity = pd.read_csv(results_dir+'/Pipeline_Capacity.csv',index_col=0)
         self.Truck_Flow = pd.read_csv(results_dir+'/Truck_Flow.csv',index_col=0)
 
-        self.PTC = pd.read_csv(results_dir+'/PTC.csv',index_col=0)['0']
-        self.ITC = pd.read_csv(results_dir+'/ITC.csv',index_col=0)['0']
+        self.PTC = pd.read_csv(results_dir+'/incentives.csv',index_col=0)['PTC ($/kWh)']
+        self.ITC = pd.read_csv(results_dir+'/incentives.csv',index_col=0)['ITC ($/kWh)']
         
         self.Renewable_Production_Tech = pd.read_csv(results_dir+'/Renewable_Production_Tech_Total.csv',index_col=0)
-        
         self.Curtailed_Renewable_Production_Tech = pd.read_csv(results_dir+'/Curtailed_Renewable_Production_Tech_Total.csv',index_col=0)
         
         self.Renewable_Production_raw = pd.read_csv(results_dir+'/Renewable_Production_raw.csv',index_col=[0,1])
@@ -84,6 +83,8 @@ class Scenario:
         yaml_path = Path(self.yaml_path)
         with yaml_path.open('r') as yaml_file:
             yaml_data = yaml.safe_load(yaml_file)
+
+        self.time_periods = pd.date_range(str(self.year)+'-01-01 00:00:00', periods=8760, freq="H") 
          
         self.FinancialFiles_paths = yaml_data.get('FinancialFile', [])
         self.financials = pd.read_csv(self.FinancialFiles_paths[0],index_col=[0,1])
@@ -94,18 +95,25 @@ class Scenario:
         self.storage_inputs = pd.read_csv(self.H2StorageFile_paths[0],index_col=[0,2])
         self.ProductioncostFiles_paths = yaml_data.get('ProductioncostFile', [])
         self.prod_inputs = pd.read_csv(self.ProductioncostFiles_paths[0],index_col=[0,1]) #NOTE: this can change between runs; will eventually need to make sure we pull the right one. But for now only reading OPEX which is the same for all runs  
-        self.REopexFiles_paths = yaml_data.get('REcostProfileFile', [])
-        self.grid_prices = pd.read_csv(self.REopexFiles_paths['Grid'],index_col = 0)
+        self.REcostProfileFiles_paths = yaml_data.get('REcostProfileFile', [])
 
-        self.grid_prices.index = pd.to_datetime(self.grid_prices.index)
+        self.REcostProfileFiles = pd.read_csv(self.REcostProfileFiles_paths['Grid'])
+        self.REcostProfileFiles.fillna(0,inplace=True)
+        self.REcostProfileFiles.index = self.time_periods
+        self.grid_prices = self.REcostProfileFiles[['Price ($/kWh)','Price ($/MWh)']]
+
+                        
+        #self.grid_prices.index = pd.to_datetime(self.grid_prices.index)
         self.grid_prices = self.grid_prices.resample('{}h'.format(int(self.params['h']))).mean()
-        self.grid_prices.insert(1,'Price [$/kWh]',self.grid_prices['Price ($/MWh)']/1000) 
+        #self.grid_prices.insert(1,'Price [$/kWh]',self.grid_prices['Price ($/MWh)']/1000) 
 
         self.Networks_paths = yaml_data.get('NetworksFiles', [])
         self.pipeline_cost_alpha = yaml_data.get('pipeline_cost_alpha',None) #[$/(kg/hr)-km]
         self.pipeline_cost_beta = yaml_data.get('pipeline_cost_beta',None) #[$/km]
         self.pipeline_cost_coeff = yaml_data.get('pipeline_cost_coeff',None)
         self.pipeline_cost_power = yaml_data.get('pipeline_cost_power',None) 
+
+
 
     def mass_balance_check(self):
         self.mb = self.H2_Production.sum().sum() + self.H2_Imports.sum().sum() + self.H2_Unserved.sum().sum() - self.Demand_Met.sum().sum() - self.H2_Overserved.sum().sum()
@@ -158,7 +166,7 @@ class Scenario:
 
         self.pipeline_costs.insert(len(self.pipeline_costs.columns),'CAPEX [$]',self.pipeline_costs['CAPEX [$/km]']*link_distances['Pipeline distance [km]'])
         self.pipeline_costs.fillna(0,inplace=True)
-        self.pipeline_costs.insert(len(self.pipeline_costs.columns),'Fixed OPEX [$/yr]',self.pipeline_costs['CAPEX [$]']*0.01)
+        self.pipeline_costs.insert(len(self.pipeline_costs.columns),'Fixed OPEX [$/yr]',self.pipeline_costs['CAPEX [$]']*self.transport_inputs.loc[(self.year,'Pipeline'),'Fixed OPEX (fraction of CAPEX/yr)'])
 
         self.pipeline_costs.insert(len(self.pipeline_costs.columns),'Annuitized CAPEX [$/yr]',
                                    self.pipeline_costs['CAPEX [$]']*get_CRF(self.financials.loc[('Pipelines',self.year),'WACC'],self.financials.loc[('Pipelines',self.year),'Recovery_time (years)']))
@@ -208,7 +216,7 @@ class Scenario:
         self.ITC_total_saving = self.Renewable_Production_Tech.mul(self.ITC,axis='index')
         
         #calculate grid opex
-        self.grid_costs = self.Electricity_Used_raw.xs('Grid').mul(self.grid_prices['Price [$/kWh]'],axis=0).sum(axis=0)
+        self.grid_costs = self.Electricity_Used_raw.xs('Grid').mul(self.grid_prices['Price ($/kWh)'],axis=0).sum(axis=0)
         self.zone_lcoe = self.grid_costs/self.Electricity_Used_raw.xs('Grid').sum(axis=0)
         self.grid_lcoe = self.grid_costs.sum()/self.Electricity_Used_raw.xs('Grid').sum().sum()
 
@@ -266,18 +274,17 @@ class Scenario:
         self.all_annual_costs['Renewable_ITC'] = -self.ITC_total_saving.sum().sum()
         self.total_annual_cost = self.all_annual_costs.sum()
         self.all_annual_costs['Total'] = self.total_annual_cost
-        
-        try:
-            for tech in self.all_annual_costs:
-                if tech=='Geologic' or tech=='Tank' or tech == 'Pipelines' or tech == 'Trucks':
-                    denom = self.Demand_Met.sum().sum()
-                else:
-                    denom = self.Demand_Met.sum().sum()-self.H2_Imports.sum().sum()
-        except:
-            denom = self.Demand_Met.sum().sum()
-            
-        self.lcoh = self.all_annual_costs/denom
 
+        self.denom = pd.Series()
+        
+        for tech in self.all_annual_costs:
+            if tech=='Geologic' or tech=='Tank' or tech == 'Pipelines' or tech == 'Trucks':
+                self.denom[tech] = self.Demand_Met.sum().sum()
+            else:
+                self.denom[tech] = self.Demand_Met.sum().sum()-self.H2_Imports.sum().sum()
+            
+        self.lcoh = self.all_annual_costs/self.denom
+        
     def get_RE_CF_table(self): # change ___ for tech
         self.re_CF = self.Renewable_Production_raw.groupby(level=0).sum().T/(self.Zone_Capacities.T[['Offshore_Wind','Solar','Onshore_Wind']]*8760)
         self.nw_re_CF = self.Renewable_Production_raw.groupby(level=0).sum().T.sum()/(self.Zone_Capacities.T[['Offshore_Wind','Solar','Onshore_Wind']].sum()*8760)
@@ -285,7 +292,6 @@ class Scenario:
 
     
     def get_CF_table(self): # change this PEM_Electrolyser
-        print('zone capacity',self.Zone_Capacities)
         self.elec_CF = self.Electricity_Used.sum(axis=0)/(self.Zone_Capacities.loc['PEM_Electrolyser']*8760)
         threshold = 0.01
         for zone in self.elec_CF.index:
@@ -309,39 +315,40 @@ cap_ratio = pd.DataFrame() #capacity ratio
 
 runs=['19']
 #/Users/yli6/Desktop/NREL/Project/HYPSTAT/HYPSTAT_github/HYPSTAT/Case_Study/Outputs/test1/params.csv
-year = 2050
+years=[2030,2040,2050]
 for run_num in runs:
-    scen = Scenario(
-    results_dir='../HYPSTAT/Case_Study/Outputs/test{rn}'.format(rn=run_num),
-    scen_num=run_num,
-    scen_name='Run {}'.format(run_num),
-    year=year,
-    yaml_path='../HYPSTAT/Case_Study/Case_Study_Scenario.yaml',
-    can_resample=True)
+    for year in years:
+        scen = Scenario(
+        results_dir='../HYPSTAT/Case_Study/Outputs/Case_Study/{y}'.format(y=year),
+        scen_num=run_num,
+        scen_name='Run {}'.format(run_num),
+        year=year,
+        yaml_path='../HYPSTAT/Case_Study/Case_Study_Scenario.yaml',
+        can_resample=True)
 
-    scen.get_LCOH_table()
-    scen.get_CF_table()
-    scen.get_capacity_ratios()
-    scen.get_RE_CF_table()
+        scen.get_LCOH_table()
+        scen.get_CF_table()
+        scen.get_capacity_ratios()
+        scen.get_RE_CF_table()
 
-    LCOHs = pd.concat([LCOHs,scen.lcoh],axis='columns')
-    CFs = pd.concat([CFs,scen.elec_CF],axis='columns')
-    LCOEs = pd.concat([LCOEs,scen.re_lcoe],axis='columns')
-    cap_ratio = pd.concat([cap_ratio,scen.capacity_ratios],axis='columns')
-    rw_CFs[run_num] = scen.nw_elec_CF
-    rw_LCOEs[run_num] = scen.nw_re_lcoe
+        LCOHs = pd.concat([LCOHs,scen.lcoh],axis='columns')
+        CFs = pd.concat([CFs,scen.elec_CF],axis='columns')
+        LCOEs = pd.concat([LCOEs,scen.re_lcoe],axis='columns')
+        cap_ratio = pd.concat([cap_ratio,scen.capacity_ratios],axis='columns')
+        rw_CFs[run_num] = scen.nw_elec_CF
+        rw_LCOEs[run_num] = scen.nw_re_lcoe
 
-LCOHs.columns = runs
-CFs.columns = runs
-LCOEs.columns = runs
+LCOHs.columns = years
+CFs.columns = years
+LCOEs.columns = years
 
-print(cap_ratio)
-print(CFs)
+#print(cap_ratio)
+#print(CFs)
 print(LCOHs)
 LCOEs.loc['nw'] = pd.Series(rw_LCOEs)
 cf_df = pd.concat([CFs.min(axis=0),CFs.max(axis=0)],axis=1).T
 cf_df.index = ['min','max']
 cf_df.loc['nw'] = pd.Series(rw_CFs)
-print(LCOEs)
-print(cf_df)
+#print(LCOEs)
+#print(cf_df)
 
