@@ -17,7 +17,7 @@ from pyomo.environ import *
 
 from model_functions_241003 import *
 
-#TODO rename all zones and other variables
+#TODO rename variables
 
 
 def expand_input_df(df,to_expand,expand_options):
@@ -150,7 +150,7 @@ class HYPSTAT:
         self.pipeline_fixed_opex_frac = self.transport_cost.loc['Pipeline','Fixed OPEX (fraction of CAPEX/yr)']      
 
         # BUILD ELECTRICITY GEN OPEX TABLE
-        #   The electricity gen opex table is indexed for each zone and technology and is indexed for time intervals to allow for variable pricing (e.g., wholesale grid).
+        #   The electricity gen opex table is indexed for each node and technology and is indexed for time intervals to allow for variable pricing (e.g., wholesale grid).
         #   A constant variable opex (in currency/kWh) is automatically loaded from the technology financials file. 
         #   If provided, profile files for electricity gen opex will override the constant value in the financial files--i.e., the variable OPEX value in the technology financials file is NOT used.
                     
@@ -230,7 +230,7 @@ class HYPSTAT:
         ### INDEX SETS ###
         self.m.T = Set(initialize=(sorted(list(self.t_dict.keys()))), ordered=True) # sort t_dict
 
-        self.m.Zones = Set(initialize=list(self.nodes), ordered=True)
+        self.m.Nodes = Set(initialize=list(self.nodes), ordered=True)
         self.m.Links = Set(initialize=list(self.links.index), ordered=True)
         self.m.Gen_Techs = Set(initialize=list(self.gen_techs), ordered=True)
         self.m.Stor_Techs = Set(initialize=list(self.stor_techs),ordered=True)
@@ -239,7 +239,7 @@ class HYPSTAT:
         ### PARAMETERS ###
         self.m.Cost_of_unserved_H2 = Param(initialize=self.unserved_cost) # [EUR/kg] We assume that a kg of unserved hydrogen has an economic cost of 10eX.
 
-        self.m.Storage_charge_cost = Param(self.m.Stor_Techs,self.m.Zones,initialize=lambda m,st,z: self.stor_charge_cost.loc[(z,st)])
+        self.m.Storage_charge_cost = Param(self.m.Stor_Techs,self.m.Nodes,initialize=lambda m,st,z: self.stor_charge_cost.loc[(z,st)])
         self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'charge limit']*self.h,within=Any) #[% of wk cap per period or INF]
         self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'discharge limit']*self.h,within=Any) #[% of working cap per period or INF]
         self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'capacity'],within=Any) #[kg or INF]
@@ -247,32 +247,32 @@ class HYPSTAT:
         self.m.Pipeline_flow_allowed = Param(self.m.Links,initialize={str(lk): 1 if self.links.loc[lk,'Pipeline allowed']=='Y' else 0 for lk in self.m.Links})
 
         ### CAPACITY VARIABLES ###
-        self.m.Gen_Capacity = Var(self.m.Gen_Techs,self.m.Zones,self.m.Gen_Tranches, domain=NonNegativeReals, initialize=0)  #[kW]
-        self.m.Electrolyser_Capacity = Var(self.m.Zones, domain=NonNegativeReals) #[kW] 
-        self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Zones,domain=NonNegativeReals) #[kg] wk capacity
-        self.m.Pipeline_Capacity = Var(self.m.Links,domain=NonNegativeReals) # [kg/period] pipeline capacity for each zone
+        self.m.Gen_Capacity = Var(self.m.Gen_Techs,self.m.Nodes,self.m.Gen_Tranches, domain=NonNegativeReals, initialize=0)  #[kW]
+        self.m.Electrolyser_Capacity = Var(self.m.Nodes, domain=NonNegativeReals) #[kW] 
+        self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Nodes,domain=NonNegativeReals) #[kg] wk capacity
+        self.m.Pipeline_Capacity = Var(self.m.Links,domain=NonNegativeReals) # [kg/period] pipeline capacity for each node
         if optimize_pipelines:
             self.m.Pipeline_Exists = Var(self.m.Links,domain=Binary) #whether or not a pipeline exists
         
         ### PRODUCTION AND FLOW VARIABLES ###
 
         # Electricity
-        self.m.Electricity_Potential  = Var(self.m.Gen_Techs, self.m.T, self.m.Zones)  #[kWh] potential to generate electricity from RE (or grid) 
-        self.m.Electricity_Used = Var(self.m.Gen_Techs, self.m.T, self.m.Zones) #[kWh] electricity used for hydrogen production
-        self.m.Electricity_Curtailed = Var(self.m.Gen_Techs,self.m.T, self.m.Zones, domain=NonNegativeReals) #[kWh] electricity production
+        self.m.Electricity_Potential  = Var(self.m.Gen_Techs, self.m.T, self.m.Nodes)  #[kWh] potential to generate electricity from RE (or grid) 
+        self.m.Electricity_Used = Var(self.m.Gen_Techs, self.m.T, self.m.Nodes) #[kWh] electricity used for hydrogen production
+        self.m.Electricity_Curtailed = Var(self.m.Gen_Techs,self.m.T, self.m.Nodes, domain=NonNegativeReals) #[kWh] electricity production
 
         # Hydrogen
-        self.m.H2_Production = Var(self.m.T, self.m.Zones, domain=NonNegativeReals)   #[kg/period]
-        self.m.H2_Demand_Met = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period]
-        self.m.H2_Unserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period],bounds=(0,0) )   #kg/per interval
-        self.m.H2_Overserved = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period] ,bounds=(0,0) )  
-        self.m.H2_Imports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period] imported hydrogen, kg/interval
-        self.m.H2_Exports = Var(self.m.T, self.m.Zones, domain=NonNegativeReals) #[kg/period] exported hydrogen, kg/interval
+        self.m.H2_Production = Var(self.m.T, self.m.Nodes, domain=NonNegativeReals)   #[kg/period]
+        self.m.H2_Demand_Met = Var(self.m.T, self.m.Nodes, domain=NonNegativeReals) #[kg/period]
+        self.m.H2_Unserved = Var(self.m.T, self.m.Nodes, domain=NonNegativeReals) #[kg/period],bounds=(0,0) )   #kg/per interval
+        self.m.H2_Overserved = Var(self.m.T, self.m.Nodes, domain=NonNegativeReals) #[kg/period] ,bounds=(0,0) )  
+        self.m.H2_Imports = Var(self.m.T, self.m.Nodes, domain=NonNegativeReals) #[kg/period] imported hydrogen, kg/interval
+        self.m.H2_Exports = Var(self.m.T, self.m.Nodes, domain=NonNegativeReals) #[kg/period] exported hydrogen, kg/interval
 
         # Storage
-        self.m.Storage_Charge = Var(self.m.Stor_Techs,self.m.T,self.m.Zones) #[kg]
-        self.m.Storage_Level = Var(self.m.Stor_Techs,self.m.T,self.m.Zones,domain=NonNegativeReals) #[kg]
-        self.m.Storage_Charge_OPEX = Var(self.m.Stor_Techs,self.m.T,self.m.Zones, domain=NonNegativeReals) #[EUR/period]
+        self.m.Storage_Charge = Var(self.m.Stor_Techs,self.m.T,self.m.Nodes) #[kg]
+        self.m.Storage_Level = Var(self.m.Stor_Techs,self.m.T,self.m.Nodes,domain=NonNegativeReals) #[kg]
+        self.m.Storage_Charge_OPEX = Var(self.m.Stor_Techs,self.m.T,self.m.Nodes, domain=NonNegativeReals) #[EUR/period]
         
         # Transmission
         self.m.Link_Flow = Var(self.m.T, self.m.Links)  #[kg]
@@ -284,124 +284,124 @@ class HYPSTAT:
         
     def load_constraints(self,optimize_pipelines=False):
         # Load pipeline flow incidence matrix
-        def link_rule(m, link, zone):
-            if zone not in self.link_flow_direction.columns:
-                #Zone is not connected by any links
+        def link_rule(m, link, node):
+            if node not in self.link_flow_direction.columns:
+                #Node is not connected by any links
                 return 0
             else:
-                return float(self.link_flow_direction.loc[link, zone])
+                return float(self.link_flow_direction.loc[link, node])
 
-        self.m.link_flow_direction = Param(self.m.Links, self.m.Zones, initialize=link_rule)
+        self.m.link_flow_direction = Param(self.m.Links, self.m.Nodes, initialize=link_rule)
 
         ### DEMAND CONSTRAINTS ###
         print('Setting up demand constraints...')
 
         # Option 1: Flexible demand over multiple time periods
-        def flexible_demand_rule(m, t, zone):
+        def flexible_demand_rule(m, t, node):
             #NOTE: this flexible demand rule is not rigorously tested
             period_hours = 24 #length of time over which demand must be met
             flex_steps = period_hours/self.h
             if t%flex_steps==0:
-                return (sum(m.H2_Demand_Met[t_step,zone] for t_step in range(t,t+flex_steps)) == sum(self.demand.loc[self.t_dict[t_step],zone] for t_step in range(t,t+flex_steps)))
+                return (sum(m.H2_Demand_Met[t_step,node] for t_step in range(t,t+flex_steps)) == sum(self.demand.loc[self.t_dict[t_step],node] for t_step in range(t,t+flex_steps)))
             else:
                 return Constraint.Skip
 
         # Option 2: Demand must be strictly met in each period
-        def strict_demand_rule(m, t, zone):
-            return (m.H2_Demand_Met[t,zone] == self.demand.loc[self.t_dict[t],zone]) #[kg/period]
+        def strict_demand_rule(m, t, node):
+            return (m.H2_Demand_Met[t,node] == self.demand.loc[self.t_dict[t],node]) #[kg/period]
 
-        #self.m.demand_constraint = Constraint(m.T, m.Zones, rule=demand_rule)
-        self.m.demand_constraint = Constraint(self.m.T, self.m.Zones, rule=strict_demand_rule)
+        #self.m.demand_constraint = Constraint(m.T, m.Nodes, rule=flexible_demand_rule)
+        self.m.demand_constraint = Constraint(self.m.T, self.m.Nodes, rule=strict_demand_rule)
 
         ### IMPORT CONSTRAINTS ###
         print('Setting up import constraints...')
 
         # Limit quantity of total imports
         def total_imports_rule(m):
-            return sum(sum(m.H2_Imports[t,zone] for t in m.T) for zone in m.Zones) <= self.max_imports #[kg]
+            return sum(sum(m.H2_Imports[t,node] for t in m.T) for node in m.Nodes) <= self.max_imports #[kg]
         
         self.m.total_imports_constraint = Constraint(rule=total_imports_rule)
 
-        # Restrict which zones are allowed to import
-        def zone_imports_rule(m, t, zone):
-            if zone in self.import_nodes:
+        # Restrict which nodes are allowed to import
+        def node_imports_rule(m, t, node):
+            if node in self.import_nodes:
                 return Constraint.Skip
             else:
-                return m.H2_Imports[t,zone] == 0 #[kg/period]
+                return m.H2_Imports[t,node] == 0 #[kg/period]
         
-        self.m.zone_imports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_imports_rule)
+        self.m.node_imports_constraint = Constraint(self.m.T,self.m.Nodes,rule=node_imports_rule)
 
         ### EXPORT CONSTRAINTS ###
         print('Setting up export constraints...')
 
         # Ensure that model meets a minimum quota of exports
         def total_exports_rule(m):
-            return (sum(sum(m.H2_Exports[t,zone] for t in m.T) for zone in m.Zones)) >= self.min_exports #[kg]
+            return (sum(sum(m.H2_Exports[t,node] for t in m.T) for node in m.Nodes)) >= self.min_exports #[kg]
 
         self.m.total_exports_constraint = Constraint(rule=total_exports_rule)
 
-        # Restrict which zones are allowed to export
-        def zone_exports_rule(m, t, zone):
-            if zone in self.export_nodes:
+        # Restrict which nodes are allowed to export
+        def node_exports_rule(m, t, node):
+            if node in self.export_nodes:
                 return Constraint.Skip
             else:
-                return m.H2_Exports[t,zone] == 0 #[kg/period]
+                return m.H2_Exports[t,node] == 0 #[kg/period]
         
-        self.m.zone_exports_constraint = Constraint(self.m.T,self.m.Zones,rule=zone_exports_rule)
+        self.m.node_exports_constraint = Constraint(self.m.T,self.m.Nodes,rule=node_exports_rule)
 
         ### STORAGE CONSTRAINTS ###
         print('Setting up storage constraints...')
 
         # Constraint storage level based on inflow/outflow of storage
-        def Storage_multi_period_rule(m, stor_tech, t, zone):
+        def Storage_multi_period_rule(m, stor_tech, t, node):
             if t == m.T.first():
-                return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Charge[stor_tech,t,zone] #[kg]
+                return m.Storage_Level[stor_tech,t,node] == m.Storage_Level[stor_tech,m.T.last(),node] + m.Storage_Charge[stor_tech,t,node] #[kg]
             else:
-                return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Charge[stor_tech, t, zone]) #[kg]
+                return (m.Storage_Level[stor_tech, t, node] == m.Storage_Level[stor_tech, t-1, node]  + m.Storage_Charge[stor_tech, t, node]) #[kg]
 
-        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_multi_period_rule)
+        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_multi_period_rule)
 
         # Constrain storage charge speed
-        def Storage_charge_rule(m, stor_tech, t, zone):
+        def Storage_charge_rule(m, stor_tech, t, node):
             if m.Storage_charge_limit[stor_tech]==np.inf or np.isnan(m.Storage_charge_limit[stor_tech]):
                 return Constraint.Skip
                 #Could also use just a really large number but probably leave as skip constraint
             else:
-                return (m.Storage_Charge[stor_tech, t, zone] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone]) #[kg]
+                return (m.Storage_Charge[stor_tech, t, node] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, node]) #[kg]
         
-        self.m.Storage_charge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_charge_rule)
+        self.m.Storage_charge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_charge_rule)
 
         # Constrain storage discharge speed
-        def Storage_discharge_rule(m, stor_tech, t, zone):
+        def Storage_discharge_rule(m, stor_tech, t, node):
             if m.Storage_discharge_limit[stor_tech]==np.inf or np.isnan(m.Storage_discharge_limit[stor_tech]):
                 return Constraint.Skip
             else:
-                return (m.Storage_Charge[stor_tech, t, zone] >= -m.Storage_discharge_limit[stor_tech]*m.Storage_Capacity[stor_tech, zone]) #[kg]
+                return (m.Storage_Charge[stor_tech, t, node] >= -m.Storage_discharge_limit[stor_tech]*m.Storage_Capacity[stor_tech, node]) #[kg]
 
-        self.m.Storage_discharge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_discharge_rule)
+        self.m.Storage_discharge_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_discharge_rule)
 
         # Constrain storage level to be within capacity
-        def Storage_level_rule(m, stor_tech, t, zone):
-            return (m.Storage_Level[stor_tech, t, zone] <= m.Storage_Capacity[stor_tech, zone]) #[kg]
+        def Storage_level_rule(m, stor_tech, t, node):
+            return (m.Storage_Level[stor_tech, t, node] <= m.Storage_Capacity[stor_tech, node]) #[kg]
 
-        self.m.Storage_level_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_level_rule)
+        self.m.Storage_level_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_level_rule)
 
-        # Constrain storage capacity within each zone (e.g., for geologic limitations)
-        def Storage_capacity_cap_rule(m, stor_tech, zone):
-            cap = self.stor_capacity_limits.loc[stor_tech,zone]
+        # Constrain storage capacity within each node (e.g., for geologic limitations)
+        def Storage_capacity_cap_rule(m, stor_tech, node):
+            cap = self.stor_capacity_limits.loc[stor_tech,node]
             if cap==np.inf or np.isnan(cap):
                 return Constraint.Skip
             else:
-                return (m.Storage_Capacity[stor_tech, zone] <= cap) #[kg]
+                return (m.Storage_Capacity[stor_tech, node] <= cap) #[kg]
 
-        self.m.Storage_capacity_cap_constraint = Constraint(self.m.Stor_Techs, self.m.Zones, rule=Storage_capacity_cap_rule)
+        self.m.Storage_capacity_cap_constraint = Constraint(self.m.Stor_Techs, self.m.Nodes, rule=Storage_capacity_cap_rule)
 
         # Constrain total storage capacity among all storage of a given type
         def Total_storage_capacity_rule(m, stor_tech):
             if m.Total_storage_capacity[stor_tech]==np.inf or np.isnan(m.Total_storage_capacity[stor_tech]):
                 return Constraint.Skip
             else:
-                return (sum(m.Storage_Capacity[stor_tech, zone] for zone in m.Zones) <= m.Total_storage_capacity[stor_tech]) #[kg]
+                return (sum(m.Storage_Capacity[stor_tech, node] for node in m.Nodes) <= m.Total_storage_capacity[stor_tech]) #[kg]
 
         self.m.Total_storage_capacity_constraint = Constraint(self.m.Stor_Techs, rule=Total_storage_capacity_rule)
 
@@ -457,61 +457,61 @@ class HYPSTAT:
         print('Setting up electricity and hydrogen production constraints...')
         
         # Define the electricity production potential at each node in kwh
-        def Electricity_Potential_rule(m, tech, t, zone):
-            return m.Electricity_Potential[tech, t, zone] == sum(self.gen_profiles.loc[self.t_dict[t],(tech,zone,tranche)] * m.Gen_Capacity[tech,zone,tranche]  for tranche in get_producers(self.gen_capacity_limits,zone=zone,tech = tech).index ) #[kWh, from kW * (kWh/kW)/period for period]
+        def Electricity_Potential_rule(m, tech, t, node):
+            return m.Electricity_Potential[tech, t, node] == sum(self.gen_profiles.loc[self.t_dict[t],(tech,node,tranche)] * m.Gen_Capacity[tech,node,tranche]  for tranche in get_producers(self.gen_capacity_limits,node=node,tech = tech).index ) #[kWh, from kW * (kWh/kW)/period for period]
 
-        self.m.Electricity_Potential_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Electricity_Potential_rule)
+        self.m.Electricity_Potential_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Electricity_Potential_rule)
 
         # Constrain the capacity of electricity generators
         #TODO: revisit this set of constraints
-        def Gen_capacity_limit_rule(m, tech, zone, tranche):
-            capacity = get_producers(self.gen_capacity_limits,zone=zone,tech=tech)
+        def Gen_capacity_limit_rule(m, tech, node, tranche):
+            capacity = get_producers(self.gen_capacity_limits,node=node,tech=tech)
             if tranche in capacity.index:
                 if not capacity.loc[tranche]==capacity.loc[tranche]:
                     capacity.loc[tranche] = 0
-                return  (m.Gen_Capacity[tech,zone,tranche] <= capacity.loc[tranche] * 1000) # [kW, capacity must be in MW] #TODO: specify units in inputs to avoid this 1000
+                return  (m.Gen_Capacity[tech,node,tranche] <= capacity.loc[tranche] * 1000) # [kW, capacity must be in MW] #TODO: specify units in inputs to avoid this 1000
             else:
                 return Constraint.Skip
 
-        self.m.Gen_capacity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.Zones, self.m.Gen_Tranches, rule=Gen_capacity_limit_rule)
+        self.m.Gen_capacity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.Nodes, self.m.Gen_Tranches, rule=Gen_capacity_limit_rule)
 
         # Constrain curtailed electricty to less than production
-        def Curtailed_electricity_limit_rule(m, tech, t, zone):
-            return m.Electricity_Curtailed[tech, t, zone] <= m.Electricity_Potential[tech, t, zone] #[kWh/period]
+        def Curtailed_electricity_limit_rule(m, tech, t, node):
+            return m.Electricity_Curtailed[tech, t, node] <= m.Electricity_Potential[tech, t, node] #[kWh/period]
         
-        self.m.Curtailed_electricity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Curtailed_electricity_limit_rule) #can't curtailed more electricity than is produced
+        self.m.Curtailed_electricity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Curtailed_electricity_limit_rule) #can't curtailed more electricity than is produced
 
         # Set amount of electricity used based on curtailed electricity
-        def Electricity_Used_rule(m, tech, t, zone):
-            return (m.Electricity_Used[tech, t, zone] == m.Electricity_Potential[tech, t, zone] - m.Electricity_Curtailed[tech, t, zone]) #[kWh/period]
+        def Electricity_Used_rule(m, tech, t, node):
+            return (m.Electricity_Used[tech, t, node] == m.Electricity_Potential[tech, t, node] - m.Electricity_Curtailed[tech, t, node]) #[kWh/period]
 
-        self.m.Electricity_Used_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Electricity_Used_rule)
+        self.m.Electricity_Used_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Electricity_Used_rule)
 
         # Constrain electricity used based on electrolyzer capacity
-        def Electrolyser_Capacity_Limit_rule(m, t, zone):
-            return (sum(m.Electricity_Used[tech, t, zone] for tech in m.Gen_Techs)) <= m.Electrolyser_Capacity[zone]*self.h #[kWh/period]
+        def Electrolyser_Capacity_Limit_rule(m, t, node):
+            return (sum(m.Electricity_Used[tech, t, node] for tech in m.Gen_Techs)) <= m.Electrolyser_Capacity[node]*self.h #[kWh/period]
 
-        self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Zones, rule=Electrolyser_Capacity_Limit_rule)
+        self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Nodes, rule=Electrolyser_Capacity_Limit_rule)
 
         # New H2 production build at nodes
         # electricity is in kWh
         
         # Set H2 production
-        def H2_Production_rule(m, t, zone):
-            return m.H2_Production[t, zone] == (sum(m.Electricity_Used[tech, t, zone] for tech in m.Gen_Techs))/self.prod_efficiency.loc[zone] #[kg/period]
+        def H2_Production_rule(m, t, node):
+            return m.H2_Production[t, node] == (sum(m.Electricity_Used[tech, t, node] for tech in m.Gen_Techs))/self.prod_efficiency.loc[node] #[kg/period]
 
-        self.m.H2_Production_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Production_rule)
+        self.m.H2_Production_constraint = Constraint(self.m.T, self.m.Nodes, rule=H2_Production_rule)
 
         ### POWER BALANCE ###
         print('Setting up power balance constraints...')
 
         # Set the hydrogen balance
-        def H2_Balance_rule(m, t, zone):
-            links_to_this_zone=self.links_to_nodes[zone]
-            return (m.H2_Production[t, zone] + m.H2_Unserved[t, zone] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, zone] for link in links_to_this_zone) + m.H2_Imports[t,zone] == \
-                    sum(m.Storage_Charge[stor_tech, t, zone] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, zone] + m.H2_Overserved[t, zone] + m.H2_Exports[t, zone]) #[kg/period]
+        def H2_Balance_rule(m, t, node):
+            links_to_this_node=self.links_to_nodes[node]
+            return (m.H2_Production[t, node] + m.H2_Unserved[t, node] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, node] for link in links_to_this_node) + m.H2_Imports[t,node] == \
+                    sum(m.Storage_Charge[stor_tech, t, node] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, node] + m.H2_Overserved[t, node] + m.H2_Exports[t, node]) #[kg/period]
 
-        self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Zones, rule=H2_Balance_rule)
+        self.m.H2_Balance_constraint = Constraint(self.m.T, self.m.Nodes, rule=H2_Balance_rule)
 
         ### TRANSMISSION AND STORAGE COSTS ###
         print('Setting up transmission cost constraints...')
@@ -540,10 +540,10 @@ class HYPSTAT:
         print('Setting up storage cost constraints...')
 
         #Set storage charge costs
-        def Storage_Charge_OPEX_rule(m, stor_tech, t, zone):
-            return (m.Storage_Charge_OPEX[stor_tech,t,zone] >= m.Storage_Charge[stor_tech,t,zone]*m.Storage_charge_cost[stor_tech,zone]) #[$/period]
+        def Storage_Charge_OPEX_rule(m, stor_tech, t, node):
+            return (m.Storage_Charge_OPEX[stor_tech,t,node] >= m.Storage_Charge[stor_tech,t,node]*m.Storage_charge_cost[stor_tech,node]) #[$/period]
 
-        self.m.Storage_Charge_OPEX_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_Charge_OPEX_rule)
+        self.m.Storage_Charge_OPEX_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_Charge_OPEX_rule)
 
         print('Setting up objective function...')
         #### Objective function
@@ -551,10 +551,10 @@ class HYPSTAT:
         def objective_rule(m):
             
             Gen_Stor_CAPEX = sum(
-                sum(m.Storage_Capacity[stor_tech, zone] * self.build_cost.loc['{}'.format(stor_tech),zone] for stor_tech in m.Stor_Techs) + #storage technology
-                m.Electrolyser_Capacity[zone] * self.build_cost.loc['PEM Electrolyzer',zone] + #electrolyzers TODO: make this not hard coded
-                sum(sum(m.Gen_Capacity[tech,zone,tranche] * self.build_cost.loc[tech,zone] for tech in m.Gen_Techs) for tranche in m.Gen_Tranches) #generators
-            for zone in m.Zones)
+                sum(m.Storage_Capacity[stor_tech, node] * self.build_cost.loc['{}'.format(stor_tech),node] for stor_tech in m.Stor_Techs) + #storage technology
+                m.Electrolyser_Capacity[node] * self.build_cost.loc['PEM Electrolyzer',node] + #electrolyzers TODO: make this not hard coded
+                sum(sum(m.Gen_Capacity[tech,node,tranche] * self.build_cost.loc[tech,node] for tech in m.Gen_Techs) for tranche in m.Gen_Tranches) #generators
+            for node in m.Nodes)
             
             Pipeline_raw_CAPEX = sum(
                 ((m.Pipeline_Capacity[link]/self.h)*self.pipeline_capacity_capex + self.pipeline_fixed_capex*(m.Pipeline_Exists[link] if optimize_pipelines else 1))*self.year_ratio*self.links.loc[link,'Pipeline distance [km]']
@@ -570,19 +570,19 @@ class HYPSTAT:
             for link in m.Links)
             
             Gen_Stor_OPEX = sum(
-                sum(sum(m.Storage_Charge_OPEX[stor_tech,t,zone] for t in m.T) for stor_tech in m.Stor_Techs) + #storage opex
-                sum(sum((m.Electricity_Used[tech, t, zone])*self.gen_opex.loc[self.t_dict[t],(zone,tech)] for t in m.T) for tech in m.Gen_Techs) #gen opex
-            for zone in m.Zones)
+                sum(sum(m.Storage_Charge_OPEX[stor_tech,t,node] for t in m.T) for stor_tech in m.Stor_Techs) + #storage opex
+                sum(sum((m.Electricity_Used[tech, t, node])*self.gen_opex.loc[self.t_dict[t],(node,tech)] for t in m.T) for tech in m.Gen_Techs) #gen opex
+            for node in m.Nodes)
 
             Incentives = (
-                -sum(sum(sum((m.Electricity_Used[tech, t, zone])*self.gen_incentives.loc[(self.year,tech),'PTC ($/kWh)'] for zone in m.Zones) for t in m.T) for tech in m.Gen_Techs) + #PTC effects
-                -sum(sum(sum((m.Electricity_Potential[tech,t,zone])*self.gen_incentives.loc[(self.year,tech),'ITC ($/kWh)'] for zone in m.Zones) for t in m.T) for tech in m.Gen_Techs) #ITC effects
+                -sum(sum(sum((m.Electricity_Used[tech, t, node])*self.gen_incentives.loc[(self.year,tech),'PTC ($/kWh)'] for node in m.Nodes) for t in m.T) for tech in m.Gen_Techs) + #PTC effects
+                -sum(sum(sum((m.Electricity_Potential[tech,t,node])*self.gen_incentives.loc[(self.year,tech),'ITC ($/kWh)'] for node in m.Nodes) for t in m.T) for tech in m.Gen_Techs) #ITC effects
              ) 
 
             Penalties = sum(
-                sum(m.H2_Unserved[t, zone] * m.Cost_of_unserved_H2 for t in m.T) + #unserved hydrogen
-                sum(m.H2_Overserved[t, zone] * self.overserved_cost for t in m.T) #overserved hydrogen
-            for zone in m.Zones)
+                sum(m.H2_Unserved[t, node] * m.Cost_of_unserved_H2 for t in m.T) + #unserved hydrogen
+                sum(m.H2_Overserved[t, node] * self.overserved_cost for t in m.T) #overserved hydrogen
+            for node in m.Nodes)
 
             return Gen_Stor_CAPEX + Pipeline_CAPEX + Transmission_OPEX + Gen_Stor_OPEX + Incentives + Penalties
                     
@@ -664,10 +664,10 @@ class HYPSTAT:
         
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
-        Zone_Capacities=Renewable_Capacity.sum(1).unstack()
+        Node_Capacities=Renewable_Capacity.sum(1).unstack()
         Electrolyser_Capacity = pd.Series(self.m.Electrolyser_Capacity.extract_values(), index=self.m.Electrolyser_Capacity.extract_values().keys())
-        Zone_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity
-        Zone_Capacities = pd.concat([Zone_Capacities,Storage_Capacity],axis=0)
+        Node_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity
+        Node_Capacities = pd.concat([Node_Capacities,Storage_Capacity],axis=0)
 
         H2_Overserved = pd.Series(self.m.H2_Overserved.extract_values(), index=self.m.H2_Overserved.extract_values().keys()).unstack()
         H2_Overserved.index=list(self.t_dict.values())
@@ -707,8 +707,8 @@ class HYPSTAT:
         H2_Unserved.index=list(self.t_dict.values())
         H2_Unserved.to_csv(results_dir+'/H2_Unserved.csv')
 
-        Zone_Capacities.loc['H2_Unserved_Capacity']=H2_Unserved.max()
-        Zone_Capacities.to_csv(results_dir+'/Zone_Capacities.csv')
+        Node_Capacities.loc['H2_Unserved_Capacity']=H2_Unserved.max()
+        Node_Capacities.to_csv(results_dir+'/Zone_Capacities.csv')
 
         H2_Production = pd.Series(self.m.H2_Production.extract_values(), index=self.m.H2_Production.extract_values().keys()).unstack()
         H2_Production.index=list(self.t_dict.values())

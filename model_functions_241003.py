@@ -16,17 +16,17 @@ def get_gen_profiles(year, techs, path, drop_capacity_below=False):
         #tech = tech.replace('_', ' ')
         tech_profiles = []
         tech_files = [f for f in files if tech in f and str(year) in f]
-        zones_from_files = []
+        nodes_from_files = []
 
         #TODO: potentially loop through explicit file format instead of reading available files??
 
         for f in tech_files:
             
-            zone = f.split('_Node_')[1].split('_')[0] #TODO: Either set formatting constraints or make flexible for user to input
+            node = f.split('_Node_')[1].split('_')[0] #TODO: Either set formatting constraints or make flexible for user to input
             profile = pd.read_csv(f, index_col=0)
 
             if len(profile) > 0:
-                zones_from_files.append(zone)
+                nodes_from_files.append(node)
                 profile.columns = [int(i) for i in profile.columns.astype(float)]
 
                 if drop_capacity_below:
@@ -34,7 +34,7 @@ def get_gen_profiles(year, techs, path, drop_capacity_below=False):
 
                 tech_profiles.append(profile)
 
-        tech_profiles = pd.concat(tech_profiles, axis=1, keys=zones_from_files)
+        tech_profiles = pd.concat(tech_profiles, axis=1, keys=nodes_from_files)
         capacities = get_capacity_frame(tech_profiles)
         all_capacities.append(capacities)
         tech_profiles = index_profiles(tech_profiles)
@@ -89,13 +89,13 @@ def get_links(path):
     
     flow_direction = get_link_flow_direction(links.index, separator=' to ')
     
-    links_to_zones = pd.concat([links['End node'], links['Start node']]).reset_index().set_index(0)
-    links_to_zones = dict(links_to_zones.Link.groupby(links_to_zones.index).apply(set))
+    links_to_nodes = pd.concat([links['End node'], links['Start node']]).reset_index().set_index(0)
+    links_to_nodes = dict(links_to_nodes.Link.groupby(links_to_nodes.index).apply(set))
 
     #Fill NaNs in links to avoid issues in model solving
     links.fillna(value=0, inplace=True)
     
-    return links, flow_direction, links_to_zones
+    return links, flow_direction, links_to_nodes
 
 
 def get_link_flow_direction(links, separator=' to '):
@@ -110,37 +110,37 @@ def get_link_flow_direction(links, separator=' to '):
 
 
 
-def get_build_cost_matrix(financial_data, RE_costs, H2_prod_cost, H2_storage_cost, year, all_zones):
+def get_build_cost_matrix(financial_data, RE_costs, H2_prod_cost, H2_storage_cost, year, all_nodes):
     '''
     This function returns a matrix with the annualized build cost for each node
     '''
     
     build_cost = pd.DataFrame()
 
-    for zone in all_zones:
+    for node in all_nodes:
         for tech in RE_costs.index.get_level_values('Tech').unique():
-            capex = RE_costs.loc[(year,zone,tech), 'CAPEX($/kW)']
-            opex = RE_costs.loc[(year,zone,tech), 'Fix OPEX($/kW-yr)']
+            capex = RE_costs.loc[(year,node,tech), 'CAPEX($/kW)']
+            opex = RE_costs.loc[(year,node,tech), 'Fix OPEX($/kW-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
             wacc_nominal = financial_data.loc[(year,tech), 'WACC']
             interest = wacc_nominal
-            build_cost.loc[tech, zone] = get_annuity(capex, interest, recovery_time) + opex
+            build_cost.loc[tech, node] = get_annuity(capex, interest, recovery_time) + opex
 
         for tech in H2_prod_cost.index.get_level_values('Tech').unique():
-            capex = H2_prod_cost.loc[(year,zone,tech), 'CAPEX($/kW)']
-            opex = H2_prod_cost.loc[(year,zone,tech), 'OPEX($/kW-yr)']
+            capex = H2_prod_cost.loc[(year,node,tech), 'CAPEX($/kW)']
+            opex = H2_prod_cost.loc[(year,node,tech), 'OPEX($/kW-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
             wacc_nominal = financial_data.loc[(year,tech), 'WACC']
             interest = wacc_nominal
-            build_cost.loc[tech, zone] = get_annuity(capex, interest, recovery_time) + opex
+            build_cost.loc[tech, node] = get_annuity(capex, interest, recovery_time) + opex
 
         for tech in H2_storage_cost.index.get_level_values('Tech').unique():
-            capex = H2_storage_cost.loc[(year,zone,tech), 'CAPEX ($/kg)']
-            opex = H2_storage_cost.loc[(year,zone,tech), 'Fixed OPEX ($/kg-yr)']
+            capex = H2_storage_cost.loc[(year,node,tech), 'CAPEX ($/kg)']
+            opex = H2_storage_cost.loc[(year,node,tech), 'Fixed OPEX ($/kg-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
             wacc_nominal = financial_data.loc[(year,tech), 'WACC']
             interest = wacc_nominal
-            build_cost.loc[tech, zone] = get_annuity(capex, interest, recovery_time) + opex
+            build_cost.loc[tech, node] = get_annuity(capex, interest, recovery_time) + opex
 
     return build_cost#.set_index('Tech',drop=True)
 
@@ -155,25 +155,25 @@ def get_annuity(capex, interest, years):
     
     return an
 
-def get_producers(capacities,zone='A',tech = 'Terrestrial_Wind'):
+def get_producers(capacities,node='A',tech = 'Terrestrial_Wind'):
     '''
     This function allows for the creation of a list of the max capacity of all profile for a node
-    It handles the case where a zone can't have a particular technology by returning an empty series
+    It handles the case where a node can't have a particular technology by returning an empty series
     '''
-    if zone in capacities[tech].columns:
-        max_capacity=capacities[(tech,zone)]
+    if node in capacities[tech].columns:
+        max_capacity=capacities[(tech,node)]
     else:
         #return empty series if node does not exist in 'capacities'
         max_capacity=pd.Series(dtype='float64')
     return max_capacity.dropna()
 
-def get_producers_tech(tech_capacities,zone='A'):
+def get_producers_tech(tech_capacities,node='A'):
     '''
     This function allows for the creation of a list of the max capacity of specific technology for a node
-    It handles the case where a zone can't have a particular technology by returning an empty series
+    It handles the case where a node can't have a particular technology by returning an empty series
     '''
-    if zone in tech_capacities.columns:
-        max_capacity=tech_capacities[(zone)]
+    if node in tech_capacities.columns:
+        max_capacity=tech_capacities[(node)]
     else:
         #return empty series if node does not exist in 'capacities'
         max_capacity=pd.Series(dtype='float64')
