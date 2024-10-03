@@ -6,7 +6,7 @@ import pandas as pd
 
 #TODO: rename variables as needed
 
-def get_renewable_profiles(year, techs, path, drop_capacity_below=False):
+def get_gen_profiles(year, techs, path, drop_capacity_below=False):
     files = glob.glob(path + "/*")
     
     all_renewable_profiles = []
