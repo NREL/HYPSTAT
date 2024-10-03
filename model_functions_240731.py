@@ -135,7 +135,7 @@ def get_build_cost_matrix(financial_data, RE_costs, H2_prod_cost, H2_storage_cos
 
         for tech in H2_storage_cost.index.get_level_values('Tech').unique():
             capex = H2_storage_cost.loc[(year,zone,tech), 'CAPEX ($/kg)']
-            opex = H2_storage_cost.loc[(year,zone,tech), 'OPEX ($/kg)']
+            opex = H2_storage_cost.loc[(year,zone,tech), 'Fixed OPEX ($/kg-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
             wacc_nominal = financial_data.loc[(year,tech), 'WACC']
             interest = wacc_nominal

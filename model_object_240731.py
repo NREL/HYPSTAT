@@ -57,15 +57,16 @@ class HYPSTAT:
             yaml_data = yaml.safe_load(yaml_file)
         
         #   collect model control values from YAML file
-        self.year = yaml_data.get('studiedyear',None)
-        self.firstYear = yaml_data.get('firstYear', None)
-        self.lastYear = yaml_data.get('lastYear', None)
-        self.timeWindow = yaml_data.get('timeWindow', None)
+        self.year = yaml_data.get('analysis_year',None)
+        #self.firstYear = yaml_data.get('firstYear', None)
+        #self.lastYear = yaml_data.get('lastYear', None)
+        #self.timeWindow = yaml_data.get('timeWindow', None)
         self.max_imports_ratio = yaml_data.get('max_imports_ratio', None)
         self.min_exports_ratio = yaml_data.get('min_exports_ratio', None)
-        self.import_zones = yaml_data.get('import_zones', None)
-        self.export_zones = yaml_data.get('export_zones', None)
-        self.overserved_cost = yaml_data.get('hydrogen_overserved_cost', None)
+        self.import_zones = yaml_data.get('import_nodes', None)
+        self.export_zones = yaml_data.get('export_nodes', None)
+        self.overserved_cost = yaml_data.get('overserved_cost', None)
+        self.Cost_of_Unserved_H2 = yaml_data.get('unserved_cost', None) #[$/kg]
         self.start = yaml_data.get('start', None)
         self.end = yaml_data.get('end', None)
         self.coarse_resolution = yaml_data.get('coarse_resolution', None)
@@ -126,7 +127,7 @@ class HYPSTAT:
         self.compressor_charge = self.H2_prod_cost.xs((self.year,'PEM Electrolyzer'),level=('Year','Tech'))['Variable OPEX ($/kg)']
 
         #   Develop cost dictionaries and tables for storage and delivery
-        self.Storage_charge_cost = self.H2Storage_cost_data.xs(self.year,level='Year')['OPEX ($/kg)']
+        self.Storage_charge_cost = self.H2Storage_cost_data.xs(self.year,level='Year')['Variable OPEX ($/kg-charged)']
 
         self.storage_capacities = pd.read_csv(self.StorageCapacityFiles_paths[0],index_col='Node')
         self.H2_Storage_Limit = pd.read_csv(self.StorageLimitsFiles_paths[0],index_col='Storage Tech')
@@ -178,10 +179,10 @@ class HYPSTAT:
         # IMPORTS/EXPORTS AND MODEL CONTROLS
         self.max_imports = self.demand.sum().sum() * self.max_imports_ratio
         self.min_exports = self.demand.sum().sum() * self.min_exports_ratio #NOTE: ratio or amount could be changed
-        self.Cost_of_Unserved_H2 = yaml_data.get('Cost_of_Unserved_H2', None) #[$/kg]
 
         # UPDATE TIME BOUNDS FOR RELEVANT PARAMETERS (for runs <1 full year)
-        self.all_renewable_profiles = self.all_renewable_profiles.loc[self.start + str(self.year): self.end + str(self.year)]
+        #self.all_renewable_profiles = self.all_renewable_profiles.loc[self.start + str(self.year): self.end + str(self.year)]
+        self.all_renewable_profiles = self.all_renewable_profiles.loc['{} {}'.format(self.start,self.year): '{} {}'.format(self.end,self.year):]
         self.year_ratio = len(self.all_renewable_profiles.resample('d').first()) / 365
         self.max_imports *= self.year_ratio
         self.min_exports *= self.year_ratio
@@ -206,6 +207,8 @@ class HYPSTAT:
                     #close to 0, pipeline doesn't exist
                     self.links.loc[link,'Pipeline max capacity [kg/hr]'] = 0
                     self.links.loc[link,'Pipeline allowed'] = 'N'
+        else:
+            self.Pipeline_Exists = None
 
         # RESAMPLE RELEVANT DATA BASED ON TIME RESOLUTION
         if self.h != 1:
@@ -346,13 +349,13 @@ class HYPSTAT:
         print('Setting up storage constraints...')
 
         # Constraint storage level based on inflow/outflow of storage
-        def Storage_mutli_period_rule(m, stor_tech, t, zone):
+        def Storage_multi_period_rule(m, stor_tech, t, zone):
             if t == m.T.first():
                 return m.Storage_Level[stor_tech,t,zone] == m.Storage_Level[stor_tech,m.T.last(),zone] + m.Storage_Charge[stor_tech,t,zone] #[kg]
             else:
                 return (m.Storage_Level[stor_tech, t, zone] == m.Storage_Level[stor_tech, t-1, zone]  + m.Storage_Charge[stor_tech, t, zone]) #[kg]
 
-        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_mutli_period_rule)
+        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Zones, rule=Storage_multi_period_rule)
 
         # Constrain storage charge speed
         def Storage_charge_rule(m, stor_tech, t, zone):
@@ -436,15 +439,15 @@ class HYPSTAT:
         self.m.reverse_max_truck_constraint = Constraint(self.m.T, self.m.Links, rule=reverse_max_truck_rule)
 
         # Limit pipeline flows according to pipeline capacities
-        def pipeline_forward_flow_rule(m, t, link):
+        def forward_max_pipeline_rule(m, t, link):
             return m.Pipeline_Flow[t, link] <= m.Pipeline_Capacity[link] #[kg/period]
             
-        self.m.pipeline_forward_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_forward_flow_rule)
+        self.m.forward_max_pipeline_constraint = Constraint(self.m.T, self.m.Links, rule=forward_max_pipeline_rule)
 
-        def pipeline_reverse_flow_rule(m, t, link):
+        def reverse_max_pipeline_rule(m, t, link):
             return m.Pipeline_Flow[t, link] >= -1*m.Pipeline_Capacity[link] #[kg/period]
 
-        self.m.pipeline_reverse_flow_constraint = Constraint(self.m.T, self.m.Links, rule=pipeline_reverse_flow_rule)
+        self.m.reverse_max_pipeline_constraint = Constraint(self.m.T, self.m.Links, rule=reverse_max_pipeline_rule)
 
         ### PRODUCTION CONSTRAINTS ###
         print('Setting up electricity and hydrogen production constraints...')
@@ -456,7 +459,8 @@ class HYPSTAT:
         self.m.Electricity_Potential_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Zones, rule=Electricity_Potential_rule)
 
         # Constrain the capacity of electricity generators
-        def Gen_build_limit_rule(m, tech, zone, tranche):
+        #TODO: revisit this set of constraints
+        def Gen_capacity_limit_rule(m, tech, zone, tranche):
             capacity = get_producers(self.capacities,zone=zone,tech=tech)
             if tranche in capacity.index:
                 if not capacity.loc[tranche]==capacity.loc[tranche]:
@@ -465,7 +469,7 @@ class HYPSTAT:
             else:
                 return Constraint.Skip
 
-        self.m.Renewable_build_limit_constraint = Constraint(self.m.Gen_Techs, self.m.Zones, self.m.Gen_Tranches, rule=Gen_build_limit_rule)
+        self.m.Gen_capacity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.Zones, self.m.Gen_Tranches, rule=Gen_capacity_limit_rule)
 
         # Constrain curtailed electricty to less than production
         def Curtailed_electricity_limit_rule(m, tech, t, zone):
@@ -736,13 +740,14 @@ class HYPSTAT:
         Truck_Cost.index = list(self.t_dict.values())
         Truck_Cost.to_csv(results_dir+'/Truck_Cost.csv')    
 
-        self.Pipeline_Exists.to_csv(results_dir+'/Pipeline_Exists.csv')
+        if self.Pipeline_Exists is not None:
+            self.Pipeline_Exists.to_csv(results_dir+'/Pipeline_Exists.csv')
 
-
-test = HYPSTAT(yaml_file_path='Case_Study/Case_Study_Scenario.yaml')
-test.two_step_solve(solver='glpk')
-test.write_outputs('Case_Study/Outputs/active_test')
-print('Done!')
+if __name__=='__main__':
+    test = HYPSTAT(yaml_file_path='Case_Study/Case_Study_Scenario.yaml')
+    test.two_step_solve(solver='glpk')
+    test.write_outputs('Case_Study/Outputs/active_test')
+    print('Done!')
 
 '''
 GUIDE TO TEST CASES:
