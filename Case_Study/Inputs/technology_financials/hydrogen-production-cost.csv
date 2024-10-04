@@ -1,4 +1,4 @@
 Year,Node,Tech,CAPEX($/kW),OPEX($/kW-yr),efficiency(kWh/kg),Variable OPEX ($/kg)
-2030,All,PEM Electrolyzer,453,47.23869915,52.2875,0.065
-2040,All,PEM Electrolyzer,397,33.4727463,50.54659091,0.065
-2050,All,PEM Electrolyzer,397,33.4727463,49.72840909,0.065
+2030,All,Electrolyzer,453,47.23869915,52.2875,0.065
+2040,All,Electrolyzer,397,33.4727463,50.54659091,0.065
+2050,All,Electrolyzer,397,33.4727463,49.72840909,0.065

@@ -34,9 +34,6 @@ class HYPSTAT:
         
         #   collect model control values from YAML file
         self.year = yaml_data.get('analysis_year',None)
-        #self.firstYear = yaml_data.get('firstYear', None)
-        #self.lastYear = yaml_data.get('lastYear', None)
-        #self.timeWindow = yaml_data.get('timeWindow', None)
         self.max_imports_ratio = yaml_data.get('max_imports_ratio', None)
         self.min_exports_ratio = yaml_data.get('min_exports_ratio', None)
         self.import_nodes = yaml_data.get('import_nodes', None)
@@ -52,23 +49,21 @@ class HYPSTAT:
         self.time_periods = pd.date_range(str(self.year)+'-01-01 00:00:00', periods=8760, freq="H") 
 
         #   read in file paths for inputs
-        #TODO: rename in YAML file
-        self.demand_path = yaml_data.get('demandFile', [])
-        self.financials_path = yaml_data.get('FinancialFile', [])
-        self.gen_cost_path = yaml_data.get('REcostFile', [])
-        self.gen_cost_profiles_path = yaml_data.get('REcostProfileFile', [])
-        self.prod_cost_path = yaml_data.get('ProductioncostFile', [])
-        self.transport_cost_path = yaml_data.get('H2DeliveryFile', [])
-        self.stor_cost_path = yaml_data.get('H2StorageFile', [])
-        self.gen_profiles_path = yaml_data.get('SupplycurveFolder', [])
-        self.network_path = yaml_data.get('NetworksFiles', [])
-        #self.Pipeline_opex_override_path = yaml_data.get('PipelineCostOverideFile',[])
-        self.gen_incentives_path = yaml_data.get('IncentiveFiles', [])
-        self.stor_capacity_path = yaml_data.get('StorageCapacityFiles', [])
-        self.stor_constraints_path = yaml_data.get('StorageLimitsFiles', [])
+        self.demand_path = yaml_data.get('DemandFile', [])
+        self.financials_path = yaml_data.get('FinancialsFile', [])
+        self.gen_cost_path = yaml_data.get('GenCostFile', [])
+        self.gen_cost_profiles_path = yaml_data.get('GenCostProfileFile', [])
+        self.prod_cost_path = yaml_data.get('ProdCostFile', [])
+        self.transport_cost_path = yaml_data.get('TransCostFile', [])
+        self.stor_cost_path = yaml_data.get('StorCostFile', [])
+        self.gen_profiles_path = yaml_data.get('ProfilesDir', [])
+        self.network_path = yaml_data.get('NetworkFile', [])
+        self.gen_incentives_path = yaml_data.get('IncentiveFile', [])
+        self.stor_capacity_path = yaml_data.get('StorCapacityFile', [])
+        self.stor_constraints_path = yaml_data.get('StorLimitsFile', [])
 
         self.nodes = yaml_data.get('nodes',[])
-        self.gen_techs = yaml_data.get('techs') #TODO: rename in YAML file
+        self.gen_techs = yaml_data.get('gen_techs')
         self.stor_techs = yaml_data.get('stor_techs')
             
         # BUILD TECHNOLOGY AND COST INPUTS FOR MODEL FROM INPUT FILES     
@@ -88,9 +83,8 @@ class HYPSTAT:
             self.stor_techs = list(self.stor_cost.index.get_level_values('Tech').unique())
 
         #   Get profiles and capacities for electricity gen, demand, and links
-        self.gen_profiles, self.gen_capacity_limits = get_gen_profiles(year=self.year, gen_techs=self.gen_techs, path=self.gen_profiles_path[0], drop_capacity_below=False) #[RE profiles: CF (kWh/kW)/hr for each hour; capacities: MW] TODO: make capacities kW?, note about drop_capacity_below
+        self.gen_profiles, self.gen_capacity_limits = get_gen_profiles(year=self.year, gen_techs=self.gen_techs, path=self.gen_profiles_path[0], drop_capacity_below=False) #[RE profiles: CF (kWh/kW)/hr for each hour; capacities: MW] TODO: note about drop_capacity_below
         
-        #TODO: update so demand references time periods and not gen profiles
         self.demand = get_demand(self.time_periods, year=self.year, freq_in='D',freq_out='h', file_path=self.demand_path[0]) #Must be daily
         
         self.links, self.link_flow_direction, self.links_to_nodes = get_links(self.network_path[0])
@@ -100,8 +94,8 @@ class HYPSTAT:
 
         self.build_cost = get_build_cost_matrix(self.financials,self.gen_cost,self.prod_cost,self.stor_cost,self.year,self.nodes)
 
-        #   Costs and params for H2 production TODO avoid hard-coding "PEM Electrolyzer"; come back and rename "Electrolyzer"
-        self.prod_efficiency = self.prod_cost.xs((self.year,'PEM Electrolyzer'),level=('Year','Tech'))['efficiency(kWh/kg)']
+        #   Costs and params for H2 production
+        self.prod_efficiency = self.prod_cost.xs((self.year,'Electrolyzer'),level=('Year','Tech'))['efficiency(kWh/kg)']
         # TODO: add in consideration of H2 variable opex, the "compressor charge" is not currently used
         #self.compressor_charge = self.prod_cost.xs((self.year,'PEM Electrolyzer'),level=('Year','Tech'))['Variable OPEX ($/kg)']
 
@@ -440,13 +434,13 @@ class HYPSTAT:
         self.m.Electricity_Potential_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Electricity_Potential_rule)
 
         # Constrain the capacity of electricity generators
-        #TODO: revisit this set of constraints
         def Gen_capacity_limit_rule(m, tech, node, tranche):
             capacity_limit = get_node_tech_limits(self.gen_capacity_limits,node=node,tech=tech)
             if tranche in capacity_limit.index:
-                if not capacity_limit.loc[tranche]==capacity_limit.loc[tranche]:
+                if np.isnan(capacity_limit.loc[tranche]): #double check in case there is a NaN capacity limit, but this should not occur since NaNs should be removed by get_node_tech_limits
+                    print('NaN capacity limit found for {} at Node {} for tranche {}. Setting capacity limit to 0.'.format(tech,node,tranche))
                     capacity_limit.loc[tranche] = 0
-                return  (m.Gen_Capacity[tech,node,tranche] <= capacity_limit.loc[tranche] * 1000) # [kW, capacity must be in MW] #TODO: specify units in inputs to avoid this 1000
+                return  (m.Gen_Capacity[tech,node,tranche] <= capacity_limit.loc[tranche]) # [kW]
             else:
                 return Constraint.Skip
 
@@ -465,10 +459,10 @@ class HYPSTAT:
         self.m.Electricity_Used_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Electricity_Used_rule)
 
         # Constrain electricity used based on electrolyzer capacity
-        def Electrolyser_Capacity_Limit_rule(m, t, node):
+        def Electrolyzer_Capacity_Limit_rule(m, t, node):
             return (sum(m.Electricity_Used[tech, t, node] for tech in m.Gen_Techs)) <= m.Prod_Capacity[node]*self.h #[kWh/period]
 
-        self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Nodes, rule=Electrolyser_Capacity_Limit_rule)
+        self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Nodes, rule=Electrolyzer_Capacity_Limit_rule)
         
         # Set H2 production based on electricity used
         def H2_Production_rule(m, t, node):
@@ -526,7 +520,7 @@ class HYPSTAT:
             
             Gen_Stor_CAPEX = sum(
                 sum(m.Storage_Capacity[stor_tech, node] * self.build_cost.loc['{}'.format(stor_tech),node] for stor_tech in m.Stor_Techs) + #storage technology
-                m.Prod_Capacity[node] * self.build_cost.loc['PEM Electrolyzer',node] + #electrolyzers TODO: make this not hard coded
+                m.Prod_Capacity[node] * self.build_cost.loc['Electrolyzer',node] + #electrolyzers
                 sum(sum(m.Gen_Capacity[tech,node,tranche] * self.build_cost.loc[tech,node] for tech in m.Gen_Techs) for tranche in m.Gen_Tranches) #generators
             for node in m.Nodes)
             
@@ -657,7 +651,7 @@ class HYPSTAT:
         Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Node_Capacities=Renewable_Capacity.sum(1).unstack()
         Electrolyser_Capacity = pd.Series(self.m.Prod_Capacity.extract_values(), index=self.m.Prod_Capacity.extract_values().keys())
-        Node_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity
+        Node_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity #TODO: update this to just "Electrolyzer"
         Node_Capacities = pd.concat([Node_Capacities,Storage_Capacity],axis=0)
 
         H2_Overserved = pd.Series(self.m.H2_Overserved.extract_values(), index=self.m.H2_Overserved.extract_values().keys()).unstack()
