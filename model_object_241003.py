@@ -687,6 +687,17 @@ class HYPSTAT:
         Renewable_Production.to_csv(results_dir+'/Renewable_Production.csv')
         Renewable_Production_Tech.to_csv(results_dir+'/Renewable_Production_Tech_Total.csv')
 
+        Electricity_Used = pd.Series(self.m.Electricity_Used.extract_values(), index=self.m.Electricity_Used.extract_values().keys()).unstack()
+        Electricity_Used = pd.DataFrame(Electricity_Used)
+        Electricity_Used_raw = copy.copy(Electricity_Used)
+        Electricity_Used_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Electricity_Used_raw.index],names=Electricity_Used_raw.index.names)
+        Electricity_Used_raw.to_csv(results_dir+'/Electricity_Used_raw.csv')
+        Electricity_Used_Tech = Electricity_Used.groupby(level=0).sum()
+        Electricity_Used = Electricity_Used.groupby(level=1).sum()
+        Electricity_Used.index=list(self.t_dict.values())
+        Electricity_Used.to_csv(results_dir+'/Electricity_Used.csv')
+        Electricity_Used_Tech.to_csv(results_dir+'/Electricity_Used_Tech_Total.csv')
+
         Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity.to_csv(results_dir+'/Renewable_Capacity.csv')
 
