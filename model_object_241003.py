@@ -17,33 +17,6 @@ from pyomo.environ import *
 
 from model_functions_241003 import *
 
-#TODO rename variables
-
-
-def expand_input_df(df,to_expand,expand_options):
-    #NOTE: in progress, only works for nodes where all years and techs are specified. DO NOT USE FOR OTHERS.
-    '''
-    This function expands a specified category of the input dataframe to all options in that category where inputs apply to 'all'.
-    For any row of inputs applying to 'All' in the specified category, this function creates rows using those inputs for every
-    option in that category. These inputs are overridden by any specified options in the input dataframe.
-
-    Parameters:
-        df: the input dataframe
-        to_expand: the category to be expanded
-        expand_options: list of all options for that category
-
-    Returns:
-        new, expanded dataframe
-    '''
-    new_df = pd.DataFrame()
-    for op in expand_options:
-        op_df = df.xs('All',level=to_expand,drop_level=False)
-        op_df.index = op_df.index.remove_unused_levels().set_levels([op],level=to_expand)
-        new_df = pd.concat([new_df,op_df])
-    
-    new_df.loc[df.drop(index='All',level='Node').index] = None
-    return new_df.combine_first(df.drop(index='All',level='Node')).sort_index()
-
 class HYPSTAT:
         
     def __init__(self, yaml_file_path='HYPSTAT_scenario.yaml'):
@@ -51,6 +24,9 @@ class HYPSTAT:
         #self.load_inputs()
 
     def load_inputs(self,optimize_pipelines=False,Pipeline_Exists=None):
+        '''
+        Reads input files and processes into formats for input into HYPSTAT optimization formulation
+        '''
         # READ INPUTS FROM YAML FILE
         yaml_path = Path(self.yaml_file_path)
         with yaml_path.open('r') as yaml_file:
@@ -112,10 +88,10 @@ class HYPSTAT:
             self.stor_techs = list(self.stor_cost.index.get_level_values('Tech').unique())
 
         #   Get profiles and capacities for electricity gen, demand, and links
-        self.gen_profiles, self.gen_capacity_limits = get_gen_profiles(year=self.year, techs=self.gen_techs, path=self.gen_profiles_path[0], drop_capacity_below=False) #[RE profiles: CF (kWh/kW)/hr for each hour; capacities: MW] TODO: make capacities kW?, note about drop_capacity_below
+        self.gen_profiles, self.gen_capacity_limits = get_gen_profiles(year=self.year, gen_techs=self.gen_techs, path=self.gen_profiles_path[0], drop_capacity_below=False) #[RE profiles: CF (kWh/kW)/hr for each hour; capacities: MW] TODO: make capacities kW?, note about drop_capacity_below
         
         #TODO: update so demand references time periods and not gen profiles
-        self.demand = get_demand(self.gen_profiles, year=self.year, freq_in='D',freq_out='h', file_path=self.demand_path[0]) #Must be daily
+        self.demand = get_demand(self.time_periods, year=self.year, freq_in='D',freq_out='h', file_path=self.demand_path[0]) #Must be daily
         
         self.links, self.link_flow_direction, self.links_to_nodes = get_links(self.network_path[0])
         
@@ -219,9 +195,11 @@ class HYPSTAT:
             self.gen_profiles = self.gen_profiles.resample('{}h'.format(self.h)).sum() #[period CF, i.e., (kWh/kW)/period]
             self.demand = self.demand.resample('{}h'.format(self.h)).sum() # [kg/period]
             self.gen_opex = self.gen_opex.resample('{}h'.format(self.h)).mean() # [$/kWh, average]
-
-    
+ 
     def load_model(self,optimize_pipelines=False):
+        '''
+        Generates the Pyomo model object and initializes model sets, parameters, and variables
+        '''
         self.m = ConcreteModel()
 
         #Define time and node index sets
@@ -290,10 +268,11 @@ class HYPSTAT:
         self.m.Truck_Flow = Var(self.m.T,self.m.Links) #[kg]
         self.m.Pipeline_OPEX = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #[$/period]
         self.m.Truck_Cost = Var(self.m.T, self.m.Links, domain=NonNegativeReals) #[$/period] 
-        
-        
+                
     def load_constraints(self,optimize_pipelines=False):
-
+        '''
+        Loads relevant constraints for the Pyomo model object
+        '''
         ### DEMAND CONSTRAINTS ###
         print('Setting up demand constraints...')
 
@@ -456,18 +435,18 @@ class HYPSTAT:
         
         # Define the electricity production potential at each node in kWh
         def Electricity_Potential_rule(m, tech, t, node):
-            return m.Electricity_Potential[tech, t, node] == sum(self.gen_profiles.loc[self.t_dict[t],(tech,node,tranche)] * m.Gen_Capacity[tech,node,tranche]  for tranche in get_producers(self.gen_capacity_limits,node=node,tech = tech).index ) #[kWh, from kW * (kWh/kW)/period for period]
+            return m.Electricity_Potential[tech, t, node] == sum(self.gen_profiles.loc[self.t_dict[t],(tech,node,tranche)] * m.Gen_Capacity[tech,node,tranche]  for tranche in get_node_tech_limits(self.gen_capacity_limits,node=node,tech=tech).index ) #[kWh, from kW * (kWh/kW)/period for period]
 
         self.m.Electricity_Potential_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Electricity_Potential_rule)
 
         # Constrain the capacity of electricity generators
         #TODO: revisit this set of constraints
         def Gen_capacity_limit_rule(m, tech, node, tranche):
-            capacity = get_producers(self.gen_capacity_limits,node=node,tech=tech)
-            if tranche in capacity.index:
-                if not capacity.loc[tranche]==capacity.loc[tranche]:
-                    capacity.loc[tranche] = 0
-                return  (m.Gen_Capacity[tech,node,tranche] <= capacity.loc[tranche] * 1000) # [kW, capacity must be in MW] #TODO: specify units in inputs to avoid this 1000
+            capacity_limit = get_node_tech_limits(self.gen_capacity_limits,node=node,tech=tech)
+            if tranche in capacity_limit.index:
+                if not capacity_limit.loc[tranche]==capacity_limit.loc[tranche]:
+                    capacity_limit.loc[tranche] = 0
+                return  (m.Gen_Capacity[tech,node,tranche] <= capacity_limit.loc[tranche] * 1000) # [kW, capacity must be in MW] #TODO: specify units in inputs to avoid this 1000
             else:
                 return Constraint.Skip
 
@@ -584,6 +563,9 @@ class HYPSTAT:
         self.m.objective = Objective(rule=objective_rule, sense=minimize)
             
     def solve_model(self,optimize_pipelines=False,solver='glpk'):
+        '''
+        Solves the Pyomo model using the specified solver
+        '''
         stream_solver=True
         print('Solving')
         if solver=='gurobi':
@@ -593,12 +575,25 @@ class HYPSTAT:
         else:
             raise ValueError('Solver specified is not allowed!')
         results_final = opt.solve(self.m, tee=stream_solver)
+
+        print()
+        print('Model solve successful. Objective function value:',self.m.objective())
+        print()
         
         if optimize_pipelines:
             self.Pipeline_Exists = pd.Series(self.m.Pipeline_Exists.extract_values(), index=self.m.Pipeline_Exists.extract_values().keys())
     
     def two_step_solve(self,solver='glpk'):
+        '''
+        Performs a two-step solve process for the model which solves the model twice:
+            (1) Initially with a rigorous optimization for pipeline location using binary variables, at a coarse time resolution
+            (2) Next with a faster, entirely linear optimization using the specified pipeline locations from the first solve.
 
+        This function automatically handles the passing of the determined pipeline locations from the first model run
+        into the inputs of the second.
+
+        See model documentation for more details.
+        '''
         start = time.time()
 
         #solve first, optimizing for pipeline locations
@@ -618,12 +613,17 @@ class HYPSTAT:
         stop = time.time()
 
         print()
-        print('### MODEL SOLVE COMPLETE ###')
+        print('### TWO-STEP MODEL SOLVE COMPLETE ###')
         print('Initial solve took {} seconds; full solve took {} seconds. Total time: {} seconds'.format(mid-start,stop-mid,stop-start))
         print()
 
     def write_outputs(self,results_dir):
+        '''
+        This function writes the outputs (and some inputs which are useful for post-processing)
+        of the Pyomo model object (self.m) in its current state to a series of CSV files.
 
+        See documentation for more details.
+        '''
         if not os.path.exists(results_dir):
             os.makedirs(results_dir)
         else:
@@ -648,14 +648,11 @@ class HYPSTAT:
         params['h'] = self.h
         params['obj'] = self.m.objective()
 
-        print(params['obj'])
-
         pd.Series(params).to_csv(results_dir+'/params.csv')
         self.build_cost.to_csv(results_dir+'/build_cost.csv')
         incentive_data = self.gen_incentives.xs(self.year,level='Year')
         incentive_data.to_csv(results_dir+'/incentives.csv')
       
-        
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Node_Capacities=Renewable_Capacity.sum(1).unstack()

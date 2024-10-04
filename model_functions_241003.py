@@ -4,15 +4,41 @@
 import glob
 import pandas as pd
 
-#TODO: rename variables as needed
+def expand_input_df(df,to_expand,expand_options):
+    #NOTE: in progress, only works for nodes where all years and techs are specified. DO NOT USE FOR OTHERS.
+    '''
+    This function expands a specified category of the input dataframe to all options in that category where inputs apply to 'all'.
+    For any row of inputs applying to 'All' in the specified category, this function creates rows using those inputs for every
+    option in that category. These inputs are overridden by any specified options in the input dataframe.
 
-def get_gen_profiles(year, techs, path, drop_capacity_below=False):
+    Parameters:
+        df: the input dataframe
+        to_expand: the category to be expanded
+        expand_options: list of all options for that category
+
+    Returns:
+        new, expanded dataframe
+    '''
+    new_df = pd.DataFrame()
+    for op in expand_options:
+        op_df = df.xs('All',level=to_expand,drop_level=False)
+        op_df.index = op_df.index.remove_unused_levels().set_levels([op],level=to_expand)
+        new_df = pd.concat([new_df,op_df])
+    
+    new_df.loc[df.drop(index='All',level='Node').index] = None
+    return new_df.combine_first(df.drop(index='All',level='Node')).sort_index()
+
+
+def get_gen_profiles(year, gen_techs, path, drop_capacity_below=False):
+    '''
+    Builds dataframes of generation profiles and capacity limits for each tech, node, and tranche (to be used as model inputs)
+    '''
     files = glob.glob(path + "/*")
     
-    all_renewable_profiles = []
-    all_capacities = []
+    gen_profiles = []
+    capacity_limits = []
 
-    for tech in techs:
+    for tech in gen_techs:
         #tech = tech.replace('_', ' ')
         tech_profiles = []
         tech_files = [f for f in files if tech in f and str(year) in f]
@@ -35,35 +61,46 @@ def get_gen_profiles(year, techs, path, drop_capacity_below=False):
                 tech_profiles.append(profile)
 
         tech_profiles = pd.concat(tech_profiles, axis=1, keys=nodes_from_files)
-        capacities = get_capacity_frame(tech_profiles)
-        all_capacities.append(capacities)
+        capacities = get_capacity_limits(tech_profiles)
+        capacity_limits.append(capacities)
         tech_profiles = index_profiles(tech_profiles)
-        all_renewable_profiles.append(tech_profiles)
+        gen_profiles.append(tech_profiles)
 
-    all_renewable_profiles = pd.concat(all_renewable_profiles, axis=1, keys=techs)
-    all_capacities = pd.concat(all_capacities, axis=1, keys=techs)
-    all_renewable_profiles.index = pd.to_datetime(str(year), yearfirst=True) + pd.to_timedelta(
-        all_renewable_profiles.index, unit='h')
+    gen_profiles_df = pd.concat(gen_profiles, axis=1, keys=gen_techs)
+    capacity_limits_df = pd.concat(capacity_limits, axis=1, keys=gen_techs)
+    gen_profiles_df.index = pd.to_datetime(str(year), yearfirst=True) + pd.to_timedelta(
+        gen_profiles_df.index, unit='h')
 
-    return all_renewable_profiles, all_capacities
+    return gen_profiles_df, capacity_limits_df
 
-def index_profiles(all_renewable_profiles):
-    all_renewable_profiles = all_renewable_profiles.T.reset_index()
-    new_index = all_renewable_profiles.groupby('level_0').cumcount()
-    all_renewable_profiles.level_1 = new_index
-    all_renewable_profiles = all_renewable_profiles.set_index(['level_0', 'level_1']).T
-    return all_renewable_profiles
 
-def get_capacity_frame(all_renewable_profiles):
-    capacities = pd.DataFrame([list(i) for i in (all_renewable_profiles.columns)], columns=['zone', 'capacity'])
-    capacities = capacities[['zone', 'capacity']]
-    capacities.index = capacities.groupby('zone').cumcount()
-    capacities = capacities.pivot(columns='zone')
+def index_profiles(gen_profiles):
+    '''
+    Re-indexes columns for generation profiles to use numerical identifiers for tranches which can be referenced in the model
+    '''
+    gen_profiles = gen_profiles.T.reset_index()
+    new_index = gen_profiles.groupby('level_0').cumcount()
+    gen_profiles.level_1 = new_index
+    gen_profiles = gen_profiles.set_index(['level_0', 'level_1']).T
+    return gen_profiles
+
+
+def get_capacity_limits(gen_profiles):
+    '''
+    Builds a table of capacity limits by tranche for each node from generation profile inputs
+    '''
+    capacities = pd.DataFrame([list(i) for i in (gen_profiles.columns)], columns=['node', 'capacity'])
+    capacities = capacities[['node', 'capacity']]
+    capacities.index = capacities.groupby('node').cumcount()
+    capacities = capacities.pivot(columns='node')
     capacities = capacities.droplevel(0, axis=1)
     return capacities
 
 
-def get_demand(all_renewable_profiles, year,freq_in, freq_out, file_path):
+def get_demand(time_periods, year,freq_in, freq_out, file_path):
+    '''
+    Processes demand input files into demand dataframe of desired frequncy that can be read by the model
+    '''
     # NOTE: For now assumes daily demand!!
     # Read demand data
     demand = pd.read_csv(file_path,index_col=['Node','Period'])  
@@ -74,21 +111,24 @@ def get_demand(all_renewable_profiles, year,freq_in, freq_out, file_path):
     demand.sort_index(inplace=True)
 
     #calculate the number of output periods for each input period
-    periods_in_day = all_renewable_profiles.resample(freq_out).first().resample(freq_in).count().iloc[:, 0]
+    periods_in_day = pd.Series(1,index=time_periods).resample(freq_out).first().resample(freq_in).count()
     
     #Adjust demand for daily periods
     demand = pd.concat([demand[d].values / periods_in_day for d in demand.columns], axis=1, keys=demand.columns)
-    demand = demand.reindex(all_renewable_profiles.resample(freq_out).first().index).ffill()
+    demand = demand.reindex(time_periods).ffill()
 
     return demand
 
 
 def get_links(path):
+    '''
+    Builds tables for links, mapping of nodes to connected links, and link flow directions for model input
+    '''
     links = pd.read_csv(path).set_index('Link')
-    
     
     flow_direction = get_link_flow_direction(links.index, separator=' to ')
     
+    #build mapping of nodes to connect links, e.g. 'A': ['A to B', 'A to C', 'D to 'A', etc.]
     links_to_nodes = pd.concat([links['End node'], links['Start node']]).reset_index().set_index(0)
     links_to_nodes = dict(links_to_nodes.Link.groupby(links_to_nodes.index).apply(set))
 
@@ -99,6 +139,11 @@ def get_links(path):
 
 
 def get_link_flow_direction(links, separator=' to '):
+    '''
+    Builds a table for links and nodes denoting the direction of flow for each link relative to that node.
+    Contains -1, 1, or 0 to be used as a multiplier for flow to represent positive flow into a node.
+    E.g., for node A, the value for 'A to B' would be -1; the value for 'C to A' would be 1; and the value for 'B to C' would be 0.
+    '''
     link_flow_direction = pd.DataFrame(index=links, columns=[], data=0)
 
     for link in links:
@@ -109,72 +154,61 @@ def get_link_flow_direction(links, separator=' to '):
     return link_flow_direction.fillna(0)
 
 
-
-def get_build_cost_matrix(financial_data, RE_costs, H2_prod_cost, H2_storage_cost, year, all_nodes):
+def get_build_cost_matrix(financial_data, gen_cost, prod_cost, stor_cost, year, nodes):
     '''
-    This function returns a matrix with the annualized build cost for each node
+    This function returns a matrix with the annualized build cost of different technologies for each node (CAPEX + fixed OPEX)
+    Note: this will build a table including all technologies specified in input files, even if those technologies are not specified
+          as allowed technologies for a model run. (This is OK, the disallowed technologies will simply not be referenced in the
+          model run.)
     '''
-    
     build_cost = pd.DataFrame()
 
-    for node in all_nodes:
-        for tech in RE_costs.index.get_level_values('Tech').unique():
-            capex = RE_costs.loc[(year,node,tech), 'CAPEX($/kW)']
-            opex = RE_costs.loc[(year,node,tech), 'Fix OPEX($/kW-yr)']
+    for node in nodes:
+        for tech in gen_cost.index.get_level_values('Tech').unique():
+            capex = gen_cost.loc[(year,node,tech), 'CAPEX($/kW)']
+            opex = gen_cost.loc[(year,node,tech), 'Fix OPEX($/kW-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
-            wacc_nominal = financial_data.loc[(year,tech), 'WACC']
-            interest = wacc_nominal
+            wacc = financial_data.loc[(year,tech), 'WACC']
+            interest = wacc
             build_cost.loc[tech, node] = get_annuity(capex, interest, recovery_time) + opex
 
-        for tech in H2_prod_cost.index.get_level_values('Tech').unique():
-            capex = H2_prod_cost.loc[(year,node,tech), 'CAPEX($/kW)']
-            opex = H2_prod_cost.loc[(year,node,tech), 'OPEX($/kW-yr)']
+        for tech in prod_cost.index.get_level_values('Tech').unique():
+            capex = prod_cost.loc[(year,node,tech), 'CAPEX($/kW)']
+            opex = prod_cost.loc[(year,node,tech), 'OPEX($/kW-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
-            wacc_nominal = financial_data.loc[(year,tech), 'WACC']
-            interest = wacc_nominal
+            wacc = financial_data.loc[(year,tech), 'WACC']
+            interest = wacc
             build_cost.loc[tech, node] = get_annuity(capex, interest, recovery_time) + opex
 
-        for tech in H2_storage_cost.index.get_level_values('Tech').unique():
-            capex = H2_storage_cost.loc[(year,node,tech), 'CAPEX ($/kg)']
-            opex = H2_storage_cost.loc[(year,node,tech), 'Fixed OPEX ($/kg-yr)']
+        for tech in stor_cost.index.get_level_values('Tech').unique():
+            capex = stor_cost.loc[(year,node,tech), 'CAPEX ($/kg)']
+            opex = stor_cost.loc[(year,node,tech), 'Fixed OPEX ($/kg-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
-            wacc_nominal = financial_data.loc[(year,tech), 'WACC']
-            interest = wacc_nominal
+            wacc = financial_data.loc[(year,tech), 'WACC']
+            interest = wacc
             build_cost.loc[tech, node] = get_annuity(capex, interest, recovery_time) + opex
 
-    return build_cost#.set_index('Tech',drop=True)
+    return build_cost
 
 
 def get_annuity(capex, interest, years):
     '''
-    The function provides the annual repayment formula to calculate the annual payment amount for your loan. 
+    The function calculates the annuitized costs for an upfront payment given an interest rate and payback years.
     '''
-    #if interest>1:
-    #    interest = interest / 100  # conversion from %
     an = capex  * (interest * (1 + interest) ** years) /((1 + interest) ** years - 1)
     
     return an
 
-def get_producers(capacities,node='A',tech = 'Terrestrial_Wind'):
+
+def get_node_tech_limits(capacities,node='A',tech = 'Terrestrial_Wind'):
     '''
-    This function allows for the creation of a list of the max capacity of all profile for a node
-    It handles the case where a node can't have a particular technology by returning an empty series
+    Builds a series of capacity limits by tranche for the specified node and technology.
+    Series includes ONLY the tranches for that technology at that zone, so that the model is not able to build outside of those tranches.
+    Returns an empty series if the technology is not allowed at that node.
     '''
     if node in capacities[tech].columns:
         max_capacity=capacities[(tech,node)]
     else:
         #return empty series if node does not exist in 'capacities'
         max_capacity=pd.Series(dtype='float64')
-    return max_capacity.dropna()
-
-def get_producers_tech(tech_capacities,node='A'):
-    '''
-    This function allows for the creation of a list of the max capacity of specific technology for a node
-    It handles the case where a node can't have a particular technology by returning an empty series
-    '''
-    if node in tech_capacities.columns:
-        max_capacity=tech_capacities[(node)]
-    else:
-        #return empty series if node does not exist in 'capacities'
-        max_capacity=pd.Series(dtype='float64')
-    return max_capacity.dropna()
+    return max_capacity.dropna() #dropna to remove tranches that do not exist for that technology at that node
