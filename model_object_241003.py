@@ -236,19 +236,29 @@ class HYPSTAT:
         self.m.Stor_Techs = Set(initialize=list(self.stor_techs),ordered=True)
         self.m.Gen_Tranches = Set(initialize=list(self.gen_capacity_limits.index), ordered=True) # This set defines the index for different resource qualities in a single location
 
-        ### PARAMETERS ###
-        self.m.Cost_of_unserved_H2 = Param(initialize=self.unserved_cost) # [EUR/kg] We assume that a kg of unserved hydrogen has an economic cost of 10eX.
-
+        ### PARAMETERS ### #potential TODO: get rid of all parameters???
+        self.m.Unserved_cost = Param(initialize=self.unserved_cost) # [$/kg]
         self.m.Storage_charge_cost = Param(self.m.Stor_Techs,self.m.Nodes,initialize=lambda m,st,z: self.stor_charge_cost.loc[(z,st)])
         self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'charge limit']*self.h,within=Any) #[% of wk cap per period or INF]
         self.m.Storage_discharge_limit = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'discharge limit']*self.h,within=Any) #[% of working cap per period or INF]
         self.m.Total_storage_capacity = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'capacity'],within=Any) #[kg or INF]
         self.m.Truck_flow_allowed = Param(self.m.Links,initialize={str(lk): 1 if self.links.loc[lk,'Truck allowed']=='Y' else 0 for lk in self.m.Links}) #0 if not allowed for each link, 1 if allowed (multiplier for capacity limits)
         self.m.Pipeline_flow_allowed = Param(self.m.Links,initialize={str(lk): 1 if self.links.loc[lk,'Pipeline allowed']=='Y' else 0 for lk in self.m.Links})
+        
+        # Build matrix of multipliers for pipeline flow relative to each node
+        def link_matrix_generator(m, link, node):
+            if node not in self.link_flow_direction.columns:
+                #Node is not connected by any links
+                return 0
+            else:
+                return float(self.link_flow_direction.loc[link, node])
+
+        self.m.link_flow_direction = Param(self.m.Links, self.m.Nodes, initialize=link_matrix_generator)
+
 
         ### CAPACITY VARIABLES ###
         self.m.Gen_Capacity = Var(self.m.Gen_Techs,self.m.Nodes,self.m.Gen_Tranches, domain=NonNegativeReals, initialize=0)  #[kW]
-        self.m.Electrolyser_Capacity = Var(self.m.Nodes, domain=NonNegativeReals) #[kW] 
+        self.m.Prod_Capacity = Var(self.m.Nodes, domain=NonNegativeReals) #[kW] 
         self.m.Storage_Capacity = Var(self.m.Stor_Techs,self.m.Nodes,domain=NonNegativeReals) #[kg] wk capacity
         self.m.Pipeline_Capacity = Var(self.m.Links,domain=NonNegativeReals) # [kg/period] pipeline capacity for each node
         if optimize_pipelines:
@@ -283,15 +293,6 @@ class HYPSTAT:
         
         
     def load_constraints(self,optimize_pipelines=False):
-        # Load pipeline flow incidence matrix
-        def link_rule(m, link, node):
-            if node not in self.link_flow_direction.columns:
-                #Node is not connected by any links
-                return 0
-            else:
-                return float(self.link_flow_direction.loc[link, node])
-
-        self.m.link_flow_direction = Param(self.m.Links, self.m.Nodes, initialize=link_rule)
 
         ### DEMAND CONSTRAINTS ###
         print('Setting up demand constraints...')
@@ -353,19 +354,18 @@ class HYPSTAT:
         print('Setting up storage constraints...')
 
         # Constraint storage level based on inflow/outflow of storage
-        def Storage_multi_period_rule(m, stor_tech, t, node):
+        def Storage_mass_balance_rule(m, stor_tech, t, node):
             if t == m.T.first():
                 return m.Storage_Level[stor_tech,t,node] == m.Storage_Level[stor_tech,m.T.last(),node] + m.Storage_Charge[stor_tech,t,node] #[kg]
             else:
                 return (m.Storage_Level[stor_tech, t, node] == m.Storage_Level[stor_tech, t-1, node]  + m.Storage_Charge[stor_tech, t, node]) #[kg]
 
-        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_multi_period_rule)
+        self.m.Storage_multi_period_constraint = Constraint(self.m.Stor_Techs, self.m.T, self.m.Nodes, rule=Storage_mass_balance_rule)
 
         # Constrain storage charge speed
         def Storage_charge_rule(m, stor_tech, t, node):
             if m.Storage_charge_limit[stor_tech]==np.inf or np.isnan(m.Storage_charge_limit[stor_tech]):
                 return Constraint.Skip
-                #Could also use just a really large number but probably leave as skip constraint
             else:
                 return (m.Storage_Charge[stor_tech, t, node] <= m.Storage_charge_limit[stor_tech]*m.Storage_Capacity[stor_tech, node]) #[kg]
         
@@ -418,14 +418,12 @@ class HYPSTAT:
         
         else:
             #not optimizing pipelines, limit sizes according to links
-
             def pipeline_size_rule(m, link):
                 return m.Pipeline_Capacity[link] <= self.links.loc[link,'Pipeline max capacity [kg/hr]']*self.h*m.Pipeline_flow_allowed[link] #[kg/period]
             
             self.m.pipeline_size_constraint = Constraint(self.m.Links, rule=pipeline_size_rule)
 
         # Set total link flow for mass balance based on pipeline and truck flow
-        
         def total_link_flow_rule(m, t, link):
             return m.Link_Flow[t, link] == m.Pipeline_Flow[t, link] + m.Truck_Flow[t, link]  #[kg]
 
@@ -456,7 +454,7 @@ class HYPSTAT:
         ### PRODUCTION CONSTRAINTS ###
         print('Setting up electricity and hydrogen production constraints...')
         
-        # Define the electricity production potential at each node in kwh
+        # Define the electricity production potential at each node in kWh
         def Electricity_Potential_rule(m, tech, t, node):
             return m.Electricity_Potential[tech, t, node] == sum(self.gen_profiles.loc[self.t_dict[t],(tech,node,tranche)] * m.Gen_Capacity[tech,node,tranche]  for tranche in get_producers(self.gen_capacity_limits,node=node,tech = tech).index ) #[kWh, from kW * (kWh/kW)/period for period]
 
@@ -475,13 +473,13 @@ class HYPSTAT:
 
         self.m.Gen_capacity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.Nodes, self.m.Gen_Tranches, rule=Gen_capacity_limit_rule)
 
-        # Constrain curtailed electricty to less than production
+        # Constrain curtailed electricty to less than or equal to production potential
         def Curtailed_electricity_limit_rule(m, tech, t, node):
             return m.Electricity_Curtailed[tech, t, node] <= m.Electricity_Potential[tech, t, node] #[kWh/period]
         
         self.m.Curtailed_electricity_limit_constraint = Constraint(self.m.Gen_Techs, self.m.T, self.m.Nodes, rule=Curtailed_electricity_limit_rule) #can't curtailed more electricity than is produced
 
-        # Set amount of electricity used based on curtailed electricity
+        # Set amount of electricity used based on production potential and curtailed electricity
         def Electricity_Used_rule(m, tech, t, node):
             return (m.Electricity_Used[tech, t, node] == m.Electricity_Potential[tech, t, node] - m.Electricity_Curtailed[tech, t, node]) #[kWh/period]
 
@@ -489,14 +487,11 @@ class HYPSTAT:
 
         # Constrain electricity used based on electrolyzer capacity
         def Electrolyser_Capacity_Limit_rule(m, t, node):
-            return (sum(m.Electricity_Used[tech, t, node] for tech in m.Gen_Techs)) <= m.Electrolyser_Capacity[node]*self.h #[kWh/period]
+            return (sum(m.Electricity_Used[tech, t, node] for tech in m.Gen_Techs)) <= m.Prod_Capacity[node]*self.h #[kWh/period]
 
         self.m.electrolyser_capacity_limit_constraint = Constraint(self.m.T, self.m.Nodes, rule=Electrolyser_Capacity_Limit_rule)
-
-        # New H2 production build at nodes
-        # electricity is in kWh
         
-        # Set H2 production
+        # Set H2 production based on electricity used
         def H2_Production_rule(m, t, node):
             return m.H2_Production[t, node] == (sum(m.Electricity_Used[tech, t, node] for tech in m.Gen_Techs))/self.prod_efficiency.loc[node] #[kg/period]
 
@@ -507,7 +502,7 @@ class HYPSTAT:
 
         # Set the hydrogen balance
         def H2_Balance_rule(m, t, node):
-            links_to_this_node=self.links_to_nodes[node]
+            links_to_this_node=self.links_to_nodes[node] #for speed, determine specific links to the specific node and iterate only over those links
             return (m.H2_Production[t, node] + m.H2_Unserved[t, node] + sum(m.Link_Flow[t, link] * m.link_flow_direction[link, node] for link in links_to_this_node) + m.H2_Imports[t,node] == \
                     sum(m.Storage_Charge[stor_tech, t, node] for stor_tech in m.Stor_Techs) + m.H2_Demand_Met[t, node] + m.H2_Overserved[t, node] + m.H2_Exports[t, node]) #[kg/period]
 
@@ -516,7 +511,7 @@ class HYPSTAT:
         ### TRANSMISSION AND STORAGE COSTS ###
         print('Setting up transmission cost constraints...')
         
-        # Set and truck costs
+        # Set pipeline and truck costs
         def Forward_Pipeline_OPEX_rule(m, t, link):
             return (m.Pipeline_OPEX[t,link] >= m.Pipeline_Flow[t,link]*self.links.loc[link,'Pipeline Opex ($/kg)']) #[$/period]
 
@@ -552,7 +547,7 @@ class HYPSTAT:
             
             Gen_Stor_CAPEX = sum(
                 sum(m.Storage_Capacity[stor_tech, node] * self.build_cost.loc['{}'.format(stor_tech),node] for stor_tech in m.Stor_Techs) + #storage technology
-                m.Electrolyser_Capacity[node] * self.build_cost.loc['PEM Electrolyzer',node] + #electrolyzers TODO: make this not hard coded
+                m.Prod_Capacity[node] * self.build_cost.loc['PEM Electrolyzer',node] + #electrolyzers TODO: make this not hard coded
                 sum(sum(m.Gen_Capacity[tech,node,tranche] * self.build_cost.loc[tech,node] for tech in m.Gen_Techs) for tranche in m.Gen_Tranches) #generators
             for node in m.Nodes)
             
@@ -580,13 +575,12 @@ class HYPSTAT:
              ) 
 
             Penalties = sum(
-                sum(m.H2_Unserved[t, node] * m.Cost_of_unserved_H2 for t in m.T) + #unserved hydrogen
+                sum(m.H2_Unserved[t, node] * m.Unserved_cost for t in m.T) + #unserved hydrogen
                 sum(m.H2_Overserved[t, node] * self.overserved_cost for t in m.T) #overserved hydrogen
             for node in m.Nodes)
 
             return Gen_Stor_CAPEX + Pipeline_CAPEX + Transmission_OPEX + Gen_Stor_OPEX + Incentives + Penalties
                     
-            #log_infeasible_constraints(m)
         self.m.objective = Objective(rule=objective_rule, sense=minimize)
             
     def solve_model(self,optimize_pipelines=False,solver='glpk'):
@@ -607,7 +601,7 @@ class HYPSTAT:
 
         start = time.time()
 
-        #solve first, optimizing for pipelines
+        #solve first, optimizing for pipeline locations
         self.load_inputs(optimize_pipelines=True)
         self.load_model(optimize_pipelines=True)
         self.load_constraints(optimize_pipelines=True)
@@ -615,7 +609,7 @@ class HYPSTAT:
 
         mid = time.time()
 
-        #solve second, not optimizing
+        #solve second, not optimizing for pipeline locations
         self.load_inputs(optimize_pipelines=False,Pipeline_Exists=self.Pipeline_Exists)
         self.load_model(optimize_pipelines=False)
         self.load_constraints(optimize_pipelines=False)
@@ -665,7 +659,7 @@ class HYPSTAT:
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Node_Capacities=Renewable_Capacity.sum(1).unstack()
-        Electrolyser_Capacity = pd.Series(self.m.Electrolyser_Capacity.extract_values(), index=self.m.Electrolyser_Capacity.extract_values().keys())
+        Electrolyser_Capacity = pd.Series(self.m.Prod_Capacity.extract_values(), index=self.m.Prod_Capacity.extract_values().keys())
         Node_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity
         Node_Capacities = pd.concat([Node_Capacities,Storage_Capacity],axis=0)
 
