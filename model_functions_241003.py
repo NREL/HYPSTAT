@@ -166,7 +166,7 @@ def get_build_cost_matrix(financial_data, gen_cost, prod_cost, stor_cost, year, 
     for node in nodes:
         for tech in gen_cost.index.get_level_values('Tech').unique():
             capex = gen_cost.loc[(year,node,tech), 'CAPEX($/kW)']
-            opex = gen_cost.loc[(year,node,tech), 'Fix OPEX($/kW-yr)']
+            opex = gen_cost.loc[(year,node,tech), 'Fixed OPEX($/kW-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
             wacc = financial_data.loc[(year,tech), 'WACC']
             interest = wacc
@@ -174,7 +174,7 @@ def get_build_cost_matrix(financial_data, gen_cost, prod_cost, stor_cost, year, 
 
         for tech in prod_cost.index.get_level_values('Tech').unique():
             capex = prod_cost.loc[(year,node,tech), 'CAPEX($/kW)']
-            opex = prod_cost.loc[(year,node,tech), 'OPEX($/kW-yr)']
+            opex = prod_cost.loc[(year,node,tech), 'Fixed OPEX($/kW-yr)']
             recovery_time = financial_data.loc[(year,tech), 'Recovery_time (years)']
             wacc = financial_data.loc[(year,tech), 'WACC']
             interest = wacc

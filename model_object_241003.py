@@ -95,9 +95,7 @@ class HYPSTAT:
         self.build_cost = get_build_cost_matrix(self.financials,self.gen_cost,self.prod_cost,self.stor_cost,self.year,self.nodes)
 
         #   Costs and params for H2 production
-        self.prod_efficiency = self.prod_cost.xs((self.year,'Electrolyzer'),level=('Year','Tech'))['efficiency(kWh/kg)']
-        # TODO: add in consideration of H2 variable opex, the "compressor charge" is not currently used
-        #self.compressor_charge = self.prod_cost.xs((self.year,'PEM Electrolyzer'),level=('Year','Tech'))['Variable OPEX ($/kg)']
+        self.prod_efficiency = self.prod_cost.xs((self.year,'Electrolyzer'),level=('Year','Tech'))['Efficiency (kWh/kg)']
 
         #   Develop cost tables for storage and delivery
         self.stor_charge_cost = self.stor_cost.xs(self.year,level='Year')['Variable OPEX ($/kg-charged)']
