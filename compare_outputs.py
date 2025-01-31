@@ -3,6 +3,20 @@ import numpy as np
 from glob import glob
 import os
 
+filename_mapper = {
+    'Renewable_Production.csv':'Electricity_Potential.csv',
+    'Renewable_Production_raw.csv':'Electricity_Potential_raw.csv',
+    'Renewable_Production_Tech_Total.csv':'Electricity_Potential_Tech_Total.csv',
+    'Renewable_Capacity.csv':'Generation_Capacity.csv',
+    'Storage_Discharge_Charge.csv':'Storage_Charge.csv',
+    'Zone_Capacities.csv':'Node_Capacities.csv',
+    'Hydrogen_Production.csv':'H2_Production.csv',
+    'Curtailed_Renewable_Production.csv':'Electricity_Curtailed.csv',
+    'Curtailed_Renewable_Production_raw.csv':'Electricity_Curtailed_raw.csv',
+    'Curtailed_Renewable_Production_Tech_Total.csv':'Electricity_Curtailed_Tech_Total.csv',
+    'Demand_Met.csv':'H2_Demand_Met.csv'
+}
+
 def common_sums_match(df1, df2, count_no_shared_indices=False):
     #checks if the sums of rows with shared indices between two dataframes match
     #also returns False if df1 and df2 have no shared indices, unless count_no_shared_indices is set to True
@@ -23,19 +37,23 @@ def common_sums_match(df1, df2, count_no_shared_indices=False):
 #test_dir = 'HYPSTAT/HYPSTAT_github/Test Cases/test_case_gen_stor/' #should have the slash on the end
 #comp_dir = 'HYPSTAT/HYPSTAT_github/Test Cases/test_case_inputs_merged/' #should have the slash on the end
 test_dir = 'Case_Study/Outputs/active_test/' #should have the slash on the end
-comp_dir = 'Case_Study/Outputs/baseline/' #should have the slash on the end
+comp_dir = 'Case_Study/Outputs/output_rename_baseline/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
 
 dif_found = False
 
+comp_output_rename = True
+
 for cf in comp_files:
+    if comp_output_rename:
+        break
     #print(cf)
     f = cf.split('\\')[-1]
     tf = test_dir+f
     try:
-        if f=='Renewable_Capacity.csv' or tf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
+        if f=='Renewable_Capacity.csv' or f=='Generation_Capacity.csv' or tf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
             idx = [0,1]
         else:
             idx = 0
@@ -49,14 +67,17 @@ for cf in comp_files:
 for tf in test_files:
     dif_flagged = False
     f = tf.split('\\')[-1]
-    cf = comp_dir+f
-    if f=='Renewable_Capacity.csv' or tf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
+    if comp_output_rename and f in filename_mapper.keys():
+        cf = comp_dir+filename_mapper[f]
+    else:
+        cf = comp_dir+f
+    if f=='Renewable_Capacity.csv' or f=='Generation_Capacity.csv' or tf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
             idx = [0,1]
     else:
         idx = 0
     tdata = pd.read_csv(tf,index_col=idx).astype(np.float64)
     try:
-        if f=='Renewable_Capacity.csv' or cf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
+        if f=='Renewable_Capacity.csv' or f=='Generation_Capacity.csv' or cf.split('_')[-1]=='raw.csv' or f.startswith('Storage'):
             idx = [0,1]
         else:
             idx = 0
@@ -93,7 +114,7 @@ for tf in test_files:
 
     
     #check sums for Zone_Capacities
-    if f=='Zone_Capacities.csv' and dif_flagged:
+    if (f=='Zone_Capacities.csv' or f=='Node_Capacities.csv') and dif_flagged:
         tsum = tdata.sum(axis=1)
         csum = cdata.sum(axis=1)
         if common_sums_match(tsum,csum):

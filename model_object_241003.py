@@ -46,7 +46,7 @@ class HYPSTAT:
         self.fine_resolution = yaml_data.get('fine_resolution', None)
         
         #   build hourly time period set based on model year, for input processing
-        self.time_periods = pd.date_range(str(self.year)+'-01-01 00:00:00', periods=8760, freq="H") 
+        self.time_periods = pd.date_range(str(self.year)+'-01-01 00:00:00', periods=8760, freq="h") 
 
         #   read in file paths for inputs
         self.demand_path = yaml_data.get('DemandFile', [])
@@ -88,7 +88,7 @@ class HYPSTAT:
         self.demand = get_demand(self.time_periods, year=self.year, freq_in='D',freq_out='h', file_path=self.demand_path[0]) #Must be daily
         
         self.links, self.link_flow_direction, self.links_to_nodes = get_links(self.network_path[0])
-        
+
         #   Create matrix for annuitized costs for CAPEX + Fixed OPEX for each technology
         self.financials = pd.read_csv(self.financials_path[0],index_col=['Year','Tech'])     
 
@@ -123,7 +123,7 @@ class HYPSTAT:
         #   If provided, profile files for electricity gen opex will override the constant value in the financial files--i.e., the variable OPEX value in the technology financials file is NOT used.
                     
         multi_index = pd.MultiIndex.from_product([self.nodes,self.gen_techs])
-        self.gen_opex = pd.DataFrame(data=0, index=self.time_periods, columns=multi_index)
+        self.gen_opex = pd.DataFrame(data=0.0, index=self.time_periods, columns=multi_index)
 
         # fill electricity gen opex table with constant variable opex values from REcostFiles
         for node in self.nodes:
@@ -268,17 +268,7 @@ class HYPSTAT:
         ### DEMAND CONSTRAINTS ###
         print('Setting up demand constraints...')
 
-        # Option 1: Flexible demand over multiple time periods
-        def flexible_demand_rule(m, t, node):
-            #NOTE: this flexible demand rule is not rigorously tested
-            period_hours = 24 #length of time over which demand must be met
-            flex_steps = period_hours/self.h
-            if t%flex_steps==0:
-                return (sum(m.H2_Demand_Met[t_step,node] for t_step in range(t,t+flex_steps)) == sum(self.demand.loc[self.t_dict[t_step],node] for t_step in range(t,t+flex_steps)))
-            else:
-                return Constraint.Skip
-
-        # Option 2: Demand must be strictly met in each period
+        # Require that H2 demand must be strictly met in each period
         def strict_demand_rule(m, t, node):
             return (m.H2_Demand_Met[t,node] == self.demand.loc[self.t_dict[t],node]) #[kg/period]
 
@@ -648,13 +638,13 @@ class HYPSTAT:
         Storage_Capacity = pd.Series(self.m.Storage_Capacity.extract_values(), index=self.m.Storage_Capacity.extract_values().keys()).unstack()
         Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
         Node_Capacities=Renewable_Capacity.sum(1).unstack()
-        Electrolyser_Capacity = pd.Series(self.m.Prod_Capacity.extract_values(), index=self.m.Prod_Capacity.extract_values().keys())
-        Node_Capacities.loc['PEM_Electrolyser']=Electrolyser_Capacity #TODO: update this to just "Electrolyzer"
+        Electrolyzer_Capacity = pd.Series(self.m.Prod_Capacity.extract_values(), index=self.m.Prod_Capacity.extract_values().keys())
+        Node_Capacities.loc['Electrolyzer'] = Electrolyzer_Capacity
         Node_Capacities = pd.concat([Node_Capacities,Storage_Capacity],axis=0)
 
         H2_Overserved = pd.Series(self.m.H2_Overserved.extract_values(), index=self.m.H2_Overserved.extract_values().keys()).unstack()
         H2_Overserved.index=list(self.t_dict.values())
-        H2_Overserved.to_csv(results_dir+'/H2_overserved.csv')
+        H2_Overserved.to_csv(results_dir+'/H2_Overserved.csv')
 
         Link_Flow = pd.Series(self.m.Link_Flow.extract_values(), index=self.m.Link_Flow.extract_values().keys()).unstack()
         Link_Flow.index=list(self.t_dict.values())
@@ -668,16 +658,16 @@ class HYPSTAT:
         Storage_Level.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Level.index],names=Storage_Level.index.names)
         Storage_Level.to_csv(results_dir+'/Storage_Level.csv')
 
-        Renewable_Production = pd.Series(self.m.Electricity_Potential.extract_values(), index=self.m.Electricity_Potential.extract_values().keys()).unstack()
-        Renewable_Production = pd.DataFrame(Renewable_Production)
-        Renewable_Production_raw = copy.copy(Renewable_Production)
-        Renewable_Production_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Renewable_Production_raw.index],names=Renewable_Production_raw.index.names)
-        Renewable_Production_raw.to_csv(results_dir+'/Renewable_Production_raw.csv')
-        Renewable_Production_Tech = Renewable_Production.groupby(level=0).sum()
-        Renewable_Production = Renewable_Production.groupby(level=1).sum()
-        Renewable_Production.index=list(self.t_dict.values())
-        Renewable_Production.to_csv(results_dir+'/Renewable_Production.csv')
-        Renewable_Production_Tech.to_csv(results_dir+'/Renewable_Production_Tech_Total.csv')
+        Electricity_Potential = pd.Series(self.m.Electricity_Potential.extract_values(), index=self.m.Electricity_Potential.extract_values().keys()).unstack()
+        Electricity_Potential = pd.DataFrame(Electricity_Potential)
+        Electricity_Potential_raw = copy.copy(Electricity_Potential)
+        Electricity_Potential_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Electricity_Potential_raw.index],names=Electricity_Potential_raw.index.names)
+        Electricity_Potential_raw.to_csv(results_dir+'/Electricity_Potential_raw.csv')
+        Electricity_Potential_Tech = Electricity_Potential.groupby(level=0).sum()
+        Electricity_Potential = Electricity_Potential.groupby(level=1).sum()
+        Electricity_Potential.index=list(self.t_dict.values())
+        Electricity_Potential.to_csv(results_dir+'/Electricity_Potential.csv')
+        Electricity_Potential_Tech.to_csv(results_dir+'/Electricity_Potential_Tech_Total.csv')
 
         Electricity_Used = pd.Series(self.m.Electricity_Used.extract_values(), index=self.m.Electricity_Used.extract_values().keys()).unstack()
         Electricity_Used = pd.DataFrame(Electricity_Used)
@@ -690,41 +680,41 @@ class HYPSTAT:
         Electricity_Used.to_csv(results_dir+'/Electricity_Used.csv')
         Electricity_Used_Tech.to_csv(results_dir+'/Electricity_Used_Tech_Total.csv')
 
-        Renewable_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
-        Renewable_Capacity.to_csv(results_dir+'/Renewable_Capacity.csv')
+        Gen_Capacity = pd.Series(self.m.Gen_Capacity.extract_values(), index=self.m.Gen_Capacity.extract_values().keys()).unstack()
+        Gen_Capacity.to_csv(results_dir+'/Generation_Capacity.csv')
 
         Storage_Charge = pd.Series(self.m.Storage_Charge.extract_values(), index=self.m.Storage_Charge.extract_values().keys()).unstack()
         Storage_Charge.index=pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Storage_Charge.index],names=Storage_Charge.index.names)
-        Storage_Charge.to_csv(results_dir+'/Storage_Discharge_Charge.csv')
+        Storage_Charge.to_csv(results_dir+'/Storage_Charge.csv')
 
         H2_Unserved = pd.Series(self.m.H2_Unserved.extract_values(), index=self.m.H2_Unserved.extract_values().keys()).unstack()
         H2_Unserved.index=list(self.t_dict.values())
         H2_Unserved.to_csv(results_dir+'/H2_Unserved.csv')
 
         Node_Capacities.loc['H2_Unserved_Capacity']=H2_Unserved.max()
-        Node_Capacities.to_csv(results_dir+'/Zone_Capacities.csv')
+        Node_Capacities.to_csv(results_dir+'/Node_Capacities.csv')
 
         H2_Production = pd.Series(self.m.H2_Production.extract_values(), index=self.m.H2_Production.extract_values().keys()).unstack()
         H2_Production.index=list(self.t_dict.values())
-        H2_Production.to_csv(results_dir+'/Hydrogen_Production.csv')
+        H2_Production.to_csv(results_dir+'/H2_Production.csv')
 
-        Curtailed_Renewable_Production = pd.Series(self.m.Electricity_Curtailed.extract_values(), index=self.m.Electricity_Curtailed.extract_values().keys()).unstack()
-        Curtailed_Renewable_Production = pd.DataFrame(Curtailed_Renewable_Production)
-        Curtailed_Renewable_Production_raw = copy.copy(Curtailed_Renewable_Production)
-        Curtailed_Renewable_Production_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Curtailed_Renewable_Production_raw.index],names=Curtailed_Renewable_Production_raw.index.names)
-        Curtailed_Renewable_Production_raw.to_csv(results_dir+'/Curtailed_Renewable_Production_raw.csv')
-        Curtailed_Renewable_Production_Tech = Curtailed_Renewable_Production.groupby(level = 0).sum()
-        Curtailed_Renewable_Production = Curtailed_Renewable_Production.groupby(level = 1).sum()
-        Curtailed_Renewable_Production.index=list(self.t_dict.values())
-        Curtailed_Renewable_Production.to_csv(results_dir+'/Curtailed_Renewable_Production.csv')
-        Curtailed_Renewable_Production_Tech.to_csv(results_dir+'/Curtailed_Renewable_Production_Tech_Total.csv')
+        Electricity_Curtailed = pd.Series(self.m.Electricity_Curtailed.extract_values(), index=self.m.Electricity_Curtailed.extract_values().keys()).unstack()
+        Electricity_Curtailed = pd.DataFrame(Electricity_Curtailed)
+        Electricity_Curtailed_raw = copy.copy(Electricity_Curtailed)
+        Electricity_Curtailed_raw.index = pd.MultiIndex.from_tuples([(i[0],self.t_dict[i[1]]) for i in Electricity_Curtailed_raw.index],names=Electricity_Curtailed_raw.index.names)
+        Electricity_Curtailed_raw.to_csv(results_dir+'/Electricity_Curtailed_raw.csv')
+        Electricity_Curtailed_Tech = Electricity_Curtailed.groupby(level = 0).sum()
+        Electricity_Curtailed = Electricity_Curtailed.groupby(level = 1).sum()
+        Electricity_Curtailed.index=list(self.t_dict.values())
+        Electricity_Curtailed.to_csv(results_dir+'/Electricity_Curtailed.csv')
+        Electricity_Curtailed_Tech.to_csv(results_dir+'/Electricity_Curtailed_Tech_Total.csv')
 
         Pipeline_Capacity = pd.Series(self.m.Pipeline_Capacity.extract_values(), index=self.m.Pipeline_Capacity.extract_values().keys())    
         Pipeline_Capacity.to_csv(results_dir+'/Pipeline_Capacity.csv')
 
-        Demand_Met = pd.Series(self.m.H2_Demand_Met.extract_values(),index=self.m.H2_Demand_Met.extract_values().keys()).unstack()
-        Demand_Met.index=list(self.t_dict.values())
-        Demand_Met.to_csv(results_dir+'/Demand_Met.csv')
+        H2_Demand_Met = pd.Series(self.m.H2_Demand_Met.extract_values(),index=self.m.H2_Demand_Met.extract_values().keys()).unstack()
+        H2_Demand_Met.index=list(self.t_dict.values())
+        H2_Demand_Met.to_csv(results_dir+'/H2_Demand_Met.csv')
 
         H2_Imports = pd.Series(self.m.H2_Imports.extract_values(),index=self.m.H2_Imports.extract_values().keys()).unstack()
         H2_Imports.index = list(self.t_dict.values())
@@ -744,7 +734,7 @@ class HYPSTAT:
 if __name__=='__main__':
     test = HYPSTAT(yaml_file_path='Case_Study/Case_Study_Scenario.yaml')
     test.two_step_solve(solver='glpk')
-    test.write_outputs('Case_Study/Outputs/active_test')
+    test.write_outputs('Case_Study/Outputs/output_rename_test')
     print('Done!')
 
 '''

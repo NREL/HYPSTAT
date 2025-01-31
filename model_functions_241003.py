@@ -126,7 +126,7 @@ def get_links(path):
     '''
     links = pd.read_csv(path).set_index('Link')
     
-    flow_direction = get_link_flow_direction(links.index, separator=' to ')
+    flow_direction = get_link_flow_direction(links)
     
     #build mapping of nodes to connect links, e.g. 'A': ['A to B', 'A to C', 'D to 'A', etc.]
     links_to_nodes = pd.concat([links['End node'], links['Start node']]).reset_index().set_index(0)
@@ -137,22 +137,13 @@ def get_links(path):
     
     return links, flow_direction, links_to_nodes
 
-
-def get_link_flow_direction(links, separator=' to '):
-    '''
-    Builds a table for links and nodes denoting the direction of flow for each link relative to that node.
-    Contains -1, 1, or 0 to be used as a multiplier for flow to represent positive flow into a node.
-    E.g., for node A, the value for 'A to B' would be -1; the value for 'C to A' would be 1; and the value for 'B to C' would be 0.
-    '''
-    link_flow_direction = pd.DataFrame(index=links, columns=[], data=0)
-
-    for link in links:
-        fn, tn = link.split(separator)
-        link_flow_direction.loc[link, fn] = -1
-        link_flow_direction.loc[link, tn] = 1
-
+def get_link_flow_direction(links):
+    link_flow_direction = pd.DataFrame(index=links.index, columns=[], data=0)
+    for link in link_flow_direction.index:
+        link_flow_direction.loc[link,links.loc[link,'Start node']] = -1
+        link_flow_direction.loc[link,links.loc[link,'End node']] = 1
+    
     return link_flow_direction.fillna(0)
-
 
 def get_build_cost_matrix(financial_data, gen_cost, prod_cost, stor_cost, year, nodes):
     '''
