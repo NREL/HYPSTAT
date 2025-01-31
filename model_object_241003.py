@@ -206,7 +206,7 @@ class HYPSTAT:
         self.m.Stor_Techs = Set(initialize=list(self.stor_techs),ordered=True)
         self.m.Gen_Tranches = Set(initialize=list(self.gen_capacity_limits.index), ordered=True) # This set defines the index for different resource qualities in a single location
 
-        ### PARAMETERS ### #potential TODO: get rid of all parameters???
+        ### PARAMETERS ###
         self.m.Unserved_cost = Param(initialize=self.unserved_cost) # [$/kg]
         self.m.Storage_charge_cost = Param(self.m.Stor_Techs,self.m.Nodes,initialize=lambda m,st,z: self.stor_charge_cost.loc[(z,st)])
         self.m.Storage_charge_limit = Param(self.m.Stor_Techs, initialize=lambda m,st: self.stor_constraints.loc[st,'charge limit']*self.h,within=Any) #[% of wk cap per period or INF]

@@ -44,8 +44,6 @@ def get_gen_profiles(year, gen_techs, path, drop_capacity_below=False):
         tech_files = [f for f in files if tech in f and str(year) in f]
         nodes_from_files = []
 
-        #TODO: potentially loop through explicit file format instead of reading available files??
-
         for f in tech_files:
             
             node = f.split('_Node_')[1].split('_')[0] #TODO: Either set formatting constraints or make flexible for user to input
