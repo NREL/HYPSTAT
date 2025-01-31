@@ -16,12 +16,18 @@ export_nodes  : [] #zones which can import hydrogen
 #Model constrains and costs:
 overserved_cost  : 5 #$/kg
 unserved_cost : 1000 #$/kg
+#pipeline_cost_alpha : 7.717 
+#pipeline_cost_beta : 1325659
+#pipeline_cost_coeff: 25991.215
+#pipeline_cost_power: 0.395
+
 
 #Time controls (use for intrayear analysis)
 start : '1 Jan' #start date for intrayear analysis 
 end : '7 Jan' # end date for intrayear analysis
 coarse_resolution : 24 #resolution in hours to use for 1st step with pipeline location optimization (24 or higher recommended)
 fine_resolution : 2 #resolution in hours to use for 2nd step with specified pipeline locations (1-4 recommended)
+
 
 #FilePath:
 DemandFile:

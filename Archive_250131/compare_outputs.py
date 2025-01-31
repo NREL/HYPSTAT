@@ -36,15 +36,15 @@ def common_sums_match(df1, df2, count_no_shared_indices=False):
 
 #test_dir = 'HYPSTAT/HYPSTAT_github/Test Cases/test_case_gen_stor/' #should have the slash on the end
 #comp_dir = 'HYPSTAT/HYPSTAT_github/Test Cases/test_case_inputs_merged/' #should have the slash on the end
-test_dir = 'Case_Study/Outputs/active_test/' #should have the slash on the end
-comp_dir = 'Case_Study/Outputs/output_rename_baseline/' #should have the slash on the end
+test_dir = 'Case_Study/Outputs/demo_run/' #should have the slash on the end
+comp_dir = 'Archive_250131/Case_Study/Outputs/output_rename_baseline/' #should have the slash on the end
 
 test_files = [os.path.normpath(f) for f in glob(test_dir+'*csv')]
 comp_files = [os.path.normpath(f) for f in glob(comp_dir+'*csv')]
 
 dif_found = False
 
-comp_output_rename = True
+comp_output_rename = False
 
 for cf in comp_files:
     if comp_output_rename:

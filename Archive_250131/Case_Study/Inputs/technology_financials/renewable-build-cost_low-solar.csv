@@ -1,0 +1,19 @@
+Year,Node,Tech,CAPEX($/kW),Fixed OPEX($/kW-yr),Variable OPEX ($/kWh)
+2030,All,Onshore_Wind,1205,27,0
+2040,All,Onshore_Wind,1088,25.15,0
+2050,All,Onshore_Wind,970,23.3,0
+2030,All,Solar,400,15,0
+2040,All,Solar,400,15,0
+2050,All,Solar,400,15,0
+2030,All,Offshore_Wind,2723.00908,86.9098314,0
+2040,All,Offshore_Wind,2467.66057,77.0412406,0
+2050,All,Offshore_Wind,2313.86367,70.796871,0
+2030,All,Grid,0,0,0
+2040,All,Grid,0,0,0
+2050,All,Grid,0,0,0
+2030,All,Nuclear,1000,50,0
+2040,All,Nuclear,1000,50,0
+2050,All,Nuclear,1000,50,0
+2030,B,Onshore_Wind,1205,27,0
+2040,B,Onshore_Wind,10880,251.5,0
+2050,B,Onshore_Wind,9700,233,0
