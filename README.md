@@ -9,6 +9,7 @@ For detailed model documentation, see [link to documentation].
 ## Dependencies
 
 HYPSTAT is programmed and run in Python. In addition to built-in packages, HYPSTAT uses the following external packages.
+
 -[NumPy](https://numpy.org/)
 -[Pandas](https://pandas.pydata.org/)
 -[PyYaml](https://pypi.org/project/PyYAML/)
@@ -31,6 +32,7 @@ We suggest using the input files for the Case Study included here as a template 
 First, initialize a model scenario as an instance of the HYPSTAT class, using the YAML scenario file:
 
 ```python
+from HYPSTAT import HYPSTAT
 model = HYPSTAT(yaml_file_path='Path/To/YAML_scenario.yaml')
 ```
 
@@ -50,7 +52,9 @@ model.load_constraints(optimize_pipelines=True)
 model.solve_model(optimize_pipelines=True,solver=solver)
 ```
 
-Each function can take a boolean argument, `optimize_pipelines`. If `True`, HYPSTAT will formulate a mixed-integer optimization problem which optimizes pipeline locations. The mixed-integer variables cause the model to take significantly longer to run. `optimize_pipelines` defaults to `False`, in which case HYPSTAT formulates a fully linear problem using pre-specified pipeline locations which typically solves much faster. (Pipeline sizes are optimized in either case.) `optimize_pipelines` must be the same value for all functions. If `optimize_pipelines` is false, you can pass `load_inputs` an optional parameter, `Pipeline_Exists`, to tell the model where to build pipelines. If no value is passed, the model will assume it is optimal to build a pipeline at all links and may build impractically small pipelines in some locations.
+Each function can take a boolean argument, `optimize_pipelines`. If `True`, HYPSTAT will formulate a mixed-integer optimization problem which optimizes pipeline locations. The mixed-integer variables cause the model to take significantly longer to run. `optimize_pipelines` defaults to `False`, in which case HYPSTAT formulates a fully linear problem using pre-specified pipeline locations which typically solves much faster. (Pipeline sizes are optimized in either case.) `optimize_pipelines` must be the same value for all functions. 
+
+If `optimize_pipelines` is false, you can pass `load_inputs` an optional parameter, `Pipeline_Exists`, to tell the model where to build pipelines. If no value is passed, the model will assume it is optimal to build a pipeline at all links and may build impractically small pipelines in some locations.
 
 ## Solver
 
