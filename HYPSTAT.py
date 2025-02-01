@@ -164,12 +164,12 @@ class HYPSTAT:
         if optimize_pipelines:
             #first iteration
             self.h=self.coarse_resolution # [hrs/period] this specifies the number of hours in each time interval. It allows the conversion of kg/h when multiple hours are in each timestep.
-            print('Optimizing pipelines')
+            print('Performing mixed-integer optimization, including optimizing pipeline locations')
             print()
         else:
             #second iteration, hourly run
             self.h=self.fine_resolution # [hrs/period]
-            print('Performing full optimization')
+            print('Performing linear optimization with fixed pipeline locations')
             print()
 
         if Pipeline_Exists is not None:
@@ -596,7 +596,7 @@ class HYPSTAT:
 
         print()
         print('### TWO-STEP MODEL SOLVE COMPLETE ###')
-        print('Initial solve took {} seconds; full solve took {} seconds. Total time: {} seconds'.format(mid-start,stop-mid,stop-start))
+        print('First solve (MILP) took {} seconds; second solve (LP) took {} seconds. Total time: {} seconds'.format(mid-start,stop-mid,stop-start))
         print()
 
     def write_outputs(self,results_dir):
