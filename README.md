@@ -62,4 +62,5 @@ The `solve_model` and `two_step_solve` functions take an argument, `solver`, whi
 
 ## Legal disclaimer
 Copyright (c) 2025 Alliance for Sustainable Energy, LLC and Swinburne University of Technology. All rights reserved.
+
 NREL Software Record : SWR-23-04 "HyPSTAT (Hydrogen Production, Storage, and Transmission Analysis Tool)"
