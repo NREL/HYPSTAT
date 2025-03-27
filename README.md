@@ -4,7 +4,7 @@ The Hydrogen Production, Storage, and Transmission Analysis Tool (HYPSTAT) is a 
 
 HYPSTAT operates as a supply-to-demand model, taking a fixed exogenous demand as input and optimizing the design and operation of the hydrogen system to meet that demand. It determines cost-optimal configurations based on specified technology options and system constraints.
 
-For detailed model documentation, see [documentation](https://github.com/NREL/HYPSTAT/blob/main/HYPSTAT%20Full%20Documentation.docx).
+For detailed model documentation, see [documentation].
 
 ## Dependencies
 
