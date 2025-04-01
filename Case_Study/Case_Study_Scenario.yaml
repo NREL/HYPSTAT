@@ -1,0 +1,61 @@
+#Analysis:
+analysis_year  :   2030 # Units: yr
+
+#Scenario design:
+nodes: ['B','A','C','D','E','F'] #nodes to consider
+#gen_techs: ['Grid','Nuclear','Offshore_Wind','Onshore_Wind','Solar'] #generation technologies to be considered
+#stor_techs: ['Geologic','Tank'] #storage technologies to be considered
+
+
+#Import and export:
+max_imports_ratio : 0 # 25% of the total hydrogen system demand
+import_nodes  : [] #zones which can import hydrogen
+min_exports_ratio : 0 # could be ratio or amount
+export_nodes  : [] #zones which can import hydrogen
+
+#Model constrains and costs:
+overserved_cost  : 5 #$/kg
+unserved_cost : 1000 #$/kg
+
+#Time controls (use for intrayear analysis)
+start : '1 Jan' #start date for intrayear analysis 
+end : '7 Jan' # end date for intrayear analysis
+coarse_resolution : 24 #resolution in hours to use for 1st step with pipeline location optimization (24 or higher recommended)
+fine_resolution : 2 #resolution in hours to use for 2nd step with specified pipeline locations (1-4 recommended)
+
+#FilePath:
+DemandFile:
+  - "Case_Study/Inputs/demand/h2_demand.csv"
+
+FinancialsFile:
+  - "Case_Study/Inputs/technology_financials/financial_inputs.csv"
+
+GenCostFile:
+  - "Case_Study/Inputs/technology_financials/renewable-build-cost_low-solar.csv"
+
+GenCostProfileFile:
+  Grid: "Case_Study/Inputs/technology_financials/sample_grid_prices.csv"
+
+ProdCostFile:
+  - "Case_Study/Inputs/technology_financials/hydrogen-production-cost.csv"
+
+TransCostFile:
+  - "Case_Study/Inputs/technology_financials/hydrogen-delivery-cost_updated.csv"
+
+StorCostFile:
+  - "Case_Study/Inputs/technology_financials/hydrogen-storage-cost.csv"
+
+ProfilesDir:
+  - "Case_Study/Inputs/supply_curves_kw"
+
+NetworkFile:
+  - "Case_Study/Inputs/networks/Links.csv"
+
+IncentiveFile:
+  - "Case_Study/Inputs/policy/renewable-incentives.csv"
+
+StorCapacityFile:
+  - "Case_Study/Inputs/storage/storage_capacities.csv"
+
+StorLimitsFile:
+  - "Case_Study/Inputs/storage/storage_constrain.csv"

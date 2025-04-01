@@ -1,0 +1,7 @@
+Year,Node,Tech,CAPEX ($/kg),Fixed OPEX ($/kg-yr),Variable OPEX ($/kg-charged)
+2030,All,Tank,880,0.055,0.055
+2040,All,Tank,880,0.055,0.055
+2050,All,Tank,880,0.055,0.055
+2030,All,Geologic,38.5,0.247,0.247
+2040,All,Geologic,38.5,0.247,0.247
+2050,All,Geologic,38.5,0.247,0.247

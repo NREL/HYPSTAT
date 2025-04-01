@@ -1,0 +1,16 @@
+Year,Tech,ITC ($/kWh),PTC ($/kWh)
+2030,Onshore_Wind,0,0.02
+2040,Onshore_Wind,0,0.02
+2050,Onshore_Wind,0,0.02
+2030,Offshore_Wind,0.05,0
+2040,Offshore_Wind,0.05,0
+2050,Offshore_Wind,0.05,0
+2030,Solar,0,0.02
+2040,Solar,0,0.02
+2050,Solar,0,0.02
+2030,Grid,0,0
+2040,Grid,0,0
+2050,Grid,0,0
+2030,Nuclear,0,0
+2040,Nuclear,0,0
+2050,Nuclear,0,0
