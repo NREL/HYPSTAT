@@ -60,6 +60,9 @@ If `optimize_pipelines` is false, you can pass `load_inputs` an optional paramet
 
 The `solve_model` and `two_step_solve` functions take an argument, `solver`, which a string that specifies which solver to use. Right now, they can take either `'glpk'` or `'gurobi'` as the solver. You can manually program the use of other solvers with Pyomo within the `solve_model` function (a `solver` passed to `two_step_solve` is simply passed on to `solve_model`).
 
+## Recommend Citation
+Brauch, Joe, Yijin Li, Steven Percy, and Jesse Cruce. 2025. *HYPSTAT*. National Renewable Energy Laboratory and Swinburne University of Technology. https://github.com/NREL/HYPSTAT.
+
 ## Legal information
 Copyright (c) 2025 Alliance for Sustainable Energy, LLC and Swinburne University of Technology. All rights reserved.
 
