@@ -1,6 +1,6 @@
 # HYPSTAT
 
-The Hydrogen Production, Storage, and Transmission Analysis Tool (HYPSTAT) is a modeling framework developed by the National Renewable Energy Laboratory (NREL) to support the analysis of hydrogen systems. HYPSTAT focuses on key components of hydrogen infrastructure, particularly electrolytic hydrogen production, hydrogen storage, and hydrogen transmission, as part of the transition to decarbonized energy systems
+The Hydrogen Production, Storage, and Transmission Analysis Tool (HYPSTAT) is a modeling framework developed by the National Renewable Energy Laboratory (NREL) to support the analysis of hydrogen systems. HYPSTAT focuses on key components of hydrogen infrastructure, particularly electrolytic hydrogen production, hydrogen storage, and hydrogen transmission.
 
 HYPSTAT operates as a supply-to-demand model, taking a fixed exogenous demand as input and optimizing the design and operation of the hydrogen system to meet that demand. It determines cost-optimal configurations based on specified technology options and system constraints.
 
@@ -60,7 +60,7 @@ If `optimize_pipelines` is false, you can pass `load_inputs` an optional paramet
 
 The `solve_model` and `two_step_solve` functions take an argument, `solver`, which a string that specifies which solver to use. Right now, they can take either `'glpk'` or `'gurobi'` as the solver. You can manually program the use of other solvers with Pyomo within the `solve_model` function (a `solver` passed to `two_step_solve` is simply passed on to `solve_model`).
 
-## Recommend Citation
+## Recommended Citation
 Brauch, Joe, Yijin Li, Steven Percy, and Jesse Cruce. 2025. *HYPSTAT*. National Renewable Energy Laboratory and Swinburne University of Technology. https://github.com/NREL/HYPSTAT.
 
 ## Legal information
